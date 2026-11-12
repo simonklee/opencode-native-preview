@@ -249,8 +249,10 @@ jobs:
           Description: OpenCode native CLI (preview)
            A Rust client for OpenCode. Needs the TypeScript opencode 2.2.7 or newer.
           EOF
-          dpkg-deb --root-owner-group --build "$root" "dist/opencode-native_${debversion}_$arch.deb"
-          dpkg-deb --info "dist/opencode-native_${debversion}_$arch.deb"
+          # The file name keeps the release version: GitHub turns ~ into . in asset names, which would no longer match
+          # the SHA256SUMS line.
+          dpkg-deb --root-owner-group --build "$root" "dist/opencode-native_${VERSION}_$arch.deb"
+          dpkg-deb --info "dist/opencode-native_${VERSION}_$arch.deb"
       - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.target }}
