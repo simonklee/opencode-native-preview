@@ -326,6 +326,7 @@ jobs:
           RUSTFLAGS: -C target-feature=+crt-static
         run: cargo build --locked --profile dist --target "$TARGET" --bin "$BIN"
       - name: Package and smoke test
+        id: package
         run: |
           set -euo pipefail
           mkdir -p stage dist debug
@@ -349,6 +350,8 @@ jobs:
           retention-days: 90
 
       - name: Smoke 1 - version (pwsh)
+        # Each smoke runs once the package exists, also after an earlier smoke failed.
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -358,6 +361,8 @@ jobs:
           if ("$out" -notlike "*$env:VERSION*") { throw "--version printed '$out', not $env:VERSION" }
 
       - name: Smoke 2 - dependents are system DLLs and opentui.dll (+crt-static)
+        # Each smoke runs once the package exists, also after an earlier smoke failed.
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -379,6 +384,8 @@ jobs:
           "dependents: $($deps -join ', ')" | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
 
       - name: Smoke 3 - without opentui.dll the loader fails with 0xC0000135
+        # Each smoke runs once the package exists, also after an earlier smoke failed.
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -396,6 +403,8 @@ jobs:
           if ($code -ne 'C0000135') { throw "expected 0xC0000135 (STATUS_DLL_NOT_FOUND), got 0x$code" }
 
       - name: Smoke 4 - TS opencode, session list, service stop (W5)
+        # Each smoke runs once the package exists, also after an earlier smoke failed.
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -462,6 +471,8 @@ jobs:
           }
 
       - name: Smoke 5 - TUI and prompts on a pseudoconsole (W10)
+        # Each smoke runs once the package exists, also after an earlier smoke failed.
+        if: ${{ !cancelled() && steps.package.outcome == 'success' }}
         shell: pwsh
         working-directory: opencode/packages/cli-rs
         env:
