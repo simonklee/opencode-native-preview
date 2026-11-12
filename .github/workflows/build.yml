@@ -536,6 +536,8 @@ jobs:
       run:
         shell: bash
     steps:
+      # Byte-for-byte fixtures (TypeScript help, completions, P-COMP) must keep LF; the runner's Git defaults to CRLF.
+      - run: git config --global core.autocrlf false
       - uses: actions/checkout@v5
         with:
           repository: anomalyco/opencode
