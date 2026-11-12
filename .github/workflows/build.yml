@@ -1,0 +1,380 @@
+name: build
+
+# Builds opencode-rs (packages/cli-rs of anomalyco/opencode) at `ref` for each preview platform and
+# publishes one prerelease per build. The nightly run skips when `oc-rust` has not moved since the
+# last release.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit of anomalyco/opencode
+        default: oc-rust
+        required: true
+
+concurrency:
+  group: build
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  RUST_VERSION: "1.99.1"
+  ZIG_VERSION: "0.17.0"
+  BUN_VERSION: "1.4.1"
+  # The oldest TypeScript CLI the client is tested against (share-builds.md 1.2).
+  OPENCODE_TS_MIN: "2.2.7"
+  VERSION: 0.0.0-rs-${{ github.run_number }}
+  CARGO_TERM_COLOR: always
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      commit: ${{ steps.plan.outputs.commit }}
+      dev_base: ${{ steps.plan.outputs.dev_base }}
+      opentui_rev: ${{ steps.plan.outputs.opentui_rev }}
+      header_fnv1a64: ${{ steps.plan.outputs.header_fnv1a64 }}
+      skip: ${{ steps.plan.outputs.skip }}
+    steps:
+      - id: plan
+        env:
+          REF: ${{ inputs.ref || 'oc-rust' }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git init -q src && cd src
+          git remote add origin https://github.com/anomalyco/opencode
+          git fetch -q --filter=tree:0 origin "$REF"
+          commit=$(git rev-parse FETCH_HEAD)
+          git fetch -q --filter=tree:0 origin dev:refs/remotes/origin/dev
+          dev_base=$(git merge-base "$commit" origin/dev)
+          rev=$(git show "$commit:packages/cli-rs/Cargo.toml" | sed -nE 's/^opentui *= *\{.*rev *= *"([0-9a-f]{40})".*/\1/p')
+          test -n "$rev"
+          hash=$(curl -fsSL "https://raw.githubusercontent.com/anomalyco/opentui/$rev/packages/rust/crates/opentui-sys/src/generated.rs" \
+            | sed -nE 's/.*OPENTUI_HEADER_FNV1A64: u64 = (0x[0-9a-f_]+);.*/\1/p' | tr -d _)
+          test -n "$hash"
+          skip=false
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then
+            last=$(gh release list -R "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName // ""')
+            if [ -n "$last" ]; then
+              built=$(gh release download "$last" -R "$GITHUB_REPOSITORY" -p manifest.json -O - | jq -r .opencode.commit)
+              [ "$built" = "$commit" ] && skip=true
+            fi
+          fi
+          {
+            echo "commit=$commit"
+            echo "dev_base=$dev_base"
+            echo "opentui_rev=$rev"
+            echo "header_fnv1a64=$hash"
+            echo "skip=$skip"
+          } | tee -a "$GITHUB_OUTPUT"
+          echo "$REF -> $commit (dev base $dev_base), OpenTUI $rev ($hash), skip=$skip" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+            lto: fat
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04-arm
+            lto: fat
+          - target: aarch64-apple-darwin
+            os: macos-15
+            lto: fat
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 150
+    env:
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          repository: anomalyco/opencode
+          ref: ${{ needs.plan.outputs.commit }}
+          path: opencode
+          persist-credentials: false
+          # Everything the build reads: the package, and the attention sounds tui includes from packages/ui.
+          sparse-checkout: |
+            packages/cli-rs
+            packages/ui/src/assets/audio
+
+      - id: native-cache
+        uses: actions/cache@v4
+        with:
+          path: native
+          key: opentui-native-${{ needs.plan.outputs.opentui_rev }}-${{ matrix.target }}-v1
+      - if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: OpenTUI native library
+        run: scripts/opentui-native.sh "$TARGET" native && cat native/STAMP
+
+      - name: Rust
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --target "$TARGET"
+          rustup default "$RUST_VERSION"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: opencode/packages/cli-rs -> target
+          key: ${{ matrix.target }}-dist
+          save-if: ${{ github.event_name == 'schedule' || github.ref == 'refs/heads/main' }}
+
+      - name: Build
+        working-directory: opencode/packages/cli-rs
+        env:
+          OPENTUI_LIB_DIR: ${{ github.workspace }}/native
+          OPENCODE_VERSION: ${{ env.VERSION }}
+          OPENCODE_RS_COMMIT: ${{ needs.plan.outputs.commit }}
+          MACOSX_DEPLOYMENT_TARGET: "13.0"
+          CARGO_PROFILE_DIST_LTO: ${{ matrix.lto }}
+          # rustc runs dsymutil, so the debug information outlives the deleted object files.
+          CARGO_PROFILE_DIST_SPLIT_DEBUGINFO: ${{ runner.os == 'macOS' && 'packed' || 'off' }}
+        run: |
+          start=$(date +%s)
+          cargo build --locked --profile dist --target "$TARGET" --bin opencode-rs
+          echo "build: $(( $(date +%s) - start )) s" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Strip
+        run: |
+          set -euo pipefail
+          mkdir -p stage debug
+          bin=opencode/packages/cli-rs/target/$TARGET/dist/opencode-rs
+          cp "$bin" stage/opencode-rs
+          if [ "$RUNNER_OS" = macOS ]; then
+            cp -R "$bin.dSYM" debug/
+            strip stage/opencode-rs
+            # strip invalidates the linker's ad-hoc signature; arm64 macOS runs only signed code.
+            codesign --force --sign - stage/opencode-rs
+          else
+            objcopy --only-keep-debug stage/opencode-rs debug/opencode-rs.debug
+            strip --strip-all stage/opencode-rs
+            objcopy --add-gnu-debuglink=debug/opencode-rs.debug stage/opencode-rs
+            echo "highest GLIBC: $(objdump -T stage/opencode-rs | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          ls -l "$bin" stage/opencode-rs | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          out=$(stage/opencode-rs --version)
+          echo "$out"
+          case $out in *"$VERSION"*) ;; *) echo "--version printed '$out', not $VERSION"; exit 1 ;; esac
+          npm install -g "@opencode/cli@latest" >/dev/null
+          echo "TypeScript CLI: $(opencode --version)"
+          export HOME=$RUNNER_TEMP/home XDG_CONFIG_HOME=$RUNNER_TEMP/home/.config XDG_DATA_HOME=$RUNNER_TEMP/home/.local/share \
+            XDG_STATE_HOME=$RUNNER_TEMP/home/.local/state XDG_CACHE_HOME=$RUNNER_TEMP/home/.cache
+          mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_CACHE_HOME"
+          cd "$RUNNER_TEMP"
+          stage=$GITHUB_WORKSPACE/stage/opencode-rs
+          "$stage" session list > session-list.txt 2>&1 &
+          pid=$!
+          ( sleep 180; kill "$pid" 2>/dev/null ) &
+          status=0
+          wait "$pid" || status=$?
+          cat session-list.txt
+          pkill -f 'serve --service' || true
+          if [ "$status" -ne 0 ]; then
+            echo "session list exited $status"
+            find "$HOME" -name '*.log' -exec sh -c 'echo "== $1"; tail -n 60 "$1"' _ {} \;
+            exit 1
+          fi
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          cp opencode/LICENSE stage/
+          name=opencode-rs-$VERSION-$TARGET
+          mkdir -p dist
+          tar -czf "dist/$name.tar.gz" -C stage opencode-rs LICENSE
+          ls -l dist | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debug-${{ matrix.target }}
+          path: debug/
+          retention-days: 90
+          if-no-files-found: error
+
+  # FFmpeg does not build on Windows hosts, so the Windows library is cross-built here.
+  native-windows:
+    needs: plan
+    if: needs.plan.outputs.skip != 'true'
+    runs-on: ubuntu-22.04
+    continue-on-error: true
+    env:
+      TARGET: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v5
+        with:
+          repository: anomalyco/opencode
+          ref: ${{ needs.plan.outputs.commit }}
+          path: opencode
+          persist-credentials: false
+          sparse-checkout: packages/cli-rs
+      - id: native-cache
+        uses: actions/cache@v4
+        with:
+          path: native
+          key: opentui-native-${{ needs.plan.outputs.opentui_rev }}-x86_64-pc-windows-msvc-v1
+      - if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: scripts/opentui-native.sh "$TARGET" native && cat native/STAMP
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-x86_64-pc-windows-msvc
+          path: native/
+          if-no-files-found: error
+
+  # The client does not compile on Windows until the port lands; this job may fail, and the release
+  # takes its archive only when it passed.
+  windows:
+    needs: [plan, native-windows]
+    if: needs.plan.outputs.skip != 'true'
+    runs-on: windows-2025
+    continue-on-error: true
+    timeout-minutes: 150
+    env:
+      TARGET: x86_64-pc-windows-msvc
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: anomalyco/opencode
+          ref: ${{ needs.plan.outputs.commit }}
+          path: opencode
+          persist-credentials: false
+          sparse-checkout: |
+            packages/cli-rs
+            packages/ui/src/assets/audio
+      - uses: actions/download-artifact@v5
+        with:
+          name: native-x86_64-pc-windows-msvc
+          path: native
+      - name: Rust
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --target "$TARGET"
+          rustup default "$RUST_VERSION"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: opencode/packages/cli-rs -> target
+          key: ${{ env.TARGET }}-dist
+          save-if: ${{ github.event_name == 'schedule' || github.ref == 'refs/heads/main' }}
+      - name: Build
+        working-directory: opencode/packages/cli-rs
+        env:
+          OPENTUI_LIB_DIR: ${{ github.workspace }}\native
+          OPENCODE_VERSION: ${{ env.VERSION }}
+          OPENCODE_RS_COMMIT: ${{ needs.plan.outputs.commit }}
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo build --locked --profile dist --target "$TARGET" --bin opencode-rs
+      - name: Package and smoke test
+        run: |
+          set -euo pipefail
+          mkdir -p stage dist debug
+          cp "opencode/packages/cli-rs/target/$TARGET/dist/opencode-rs.exe" native/opentui.dll opencode/LICENSE stage/
+          cp "opencode/packages/cli-rs/target/$TARGET/dist/opencode_rs.pdb" debug/ || true
+          out=$(stage/opencode-rs.exe --version)
+          echo "$out"
+          case $out in *"$VERSION"*) ;; *) echo "--version printed '$out', not $VERSION"; exit 1 ;; esac
+          (cd stage && 7z a -tzip "../dist/opencode-rs-$VERSION-$TARGET.zip" opencode-rs.exe opentui.dll LICENSE >/dev/null)
+          ls -l stage dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ env.TARGET }}
+          path: dist/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debug-${{ env.TARGET }}
+          path: debug/
+          retention-days: 90
+
+  release:
+    needs: [plan, build, windows]
+    if: always() && needs.plan.outputs.skip != 'true' && needs.build.result == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      COMMIT: ${{ needs.plan.outputs.commit }}
+      DEV_BASE: ${{ needs.plan.outputs.dev_base }}
+      OPENTUI_REV: ${{ needs.plan.outputs.opentui_rev }}
+      HEADER: ${{ needs.plan.outputs.header_fnv1a64 }}
+      REF: ${{ inputs.ref || 'oc-rust' }}
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: Manifest and checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          jq -n \
+            --arg version "$VERSION" --arg ref "$REF" --arg commit "$COMMIT" --arg dev_base "$DEV_BASE" \
+            --arg rev "$OPENTUI_REV" --arg header "$HEADER" --arg rust "$RUST_VERSION" --arg zig "$ZIG_VERSION" \
+            --arg ts_min "$OPENCODE_TS_MIN" \
+            --arg run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --argjson assets "$(ls | jq -R . | jq -s .)" \
+            '{version: $version,
+              opencode: {repository: "anomalyco/opencode", ref: $ref, commit: $commit, dev_base: $dev_base},
+              opentui: {repository: "anomalyco/opentui", rev: $rev, header_fnv1a64: $header},
+              toolchain: {rust: $rust, zig: $zig, profile: "dist"},
+              requires: {opencode: (">= " + $ts_min)},
+              run: $run, assets: $assets}' > manifest.json
+          sha256sum -- * > SHA256SUMS
+          cat manifest.json SHA256SUMS
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: dist/*
+      - name: Prerelease
+        run: |
+          set -euo pipefail
+          short=${COMMIT:0:10}
+          cat > notes.md <<EOF
+          Preview build of \`opencode-rs\` from [\`anomalyco/opencode@$short\`](https://github.com/anomalyco/opencode/commit/$COMMIT) (\`$REF\`; \`dev\` base [\`${DEV_BASE:0:10}\`](https://github.com/anomalyco/opencode/commit/$DEV_BASE)), OpenTUI [\`${OPENTUI_REV:0:10}\`](https://github.com/anomalyco/opentui/commit/$OPENTUI_REV).
+
+          Unsigned preview. Needs the TypeScript \`opencode\` $OPENCODE_TS_MIN or newer on \`PATH\`. Install or update:
+
+          \`\`\`sh
+          curl -fsSL https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/install.sh | bash
+          \`\`\`
+
+          Verify: \`sha256sum -c SHA256SUMS --ignore-missing\` and \`gh attestation verify <archive> --repo $GITHUB_REPOSITORY\`.
+          EOF
+          gh release create "v$VERSION" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --prerelease --title "opencode-rs $VERSION" --notes-file notes.md
