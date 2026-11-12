@@ -1,5 +1,5 @@
 // Side-by-side recording of two clients attaching to a TS server that is already running.
-//   bun video.ts --ts /path/opencode --rs /path/opencode-rs --rs-version X --out frames.jsonl
+//   bun video.ts --ts /path/opencode --rs /path/opencode-native --rs-version X --out frames.jsonl
 // One TS server per side (same binary, identical sandboxes) starts first and settles; then both clients start at
 // the same moment with --server. Every --tick ms it stores both screens as styled cell runs plus the live numbers,
 // with wall-clock timestamps; render.ts turns that into PNG frames. Nothing is sped up.

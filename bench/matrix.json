@@ -1,10 +1,10 @@
 [
   { "label": "ts", "client": ["/path/to/npm/bin/opencode", "--standalone"] },
-  { "label": "rs", "client": ["/path/to/opencode-rs", "--standalone"], "env": { "OPENCODE_TS_BIN": "/path/to/npm/bin/opencode" } },
+  { "label": "rs", "client": ["/path/to/opencode-native", "--standalone"], "env": { "OPENCODE_TS_BIN": "/path/to/npm/bin/opencode" } },
   { "label": "ts-aot", "client": ["/path/to/aot/opencode", "--standalone"] },
-  { "label": "rs+aot", "client": ["/path/to/opencode-rs", "--standalone"], "env": { "OPENCODE_TS_BIN": "/path/to/aot/opencode" } },
+  { "label": "rs+aot", "client": ["/path/to/opencode-native", "--standalone"], "env": { "OPENCODE_TS_BIN": "/path/to/aot/opencode" } },
   { "label": "ts-server", "server": ["/path/to/npm/bin/opencode", "serve", "--port", "0"], "client": ["/path/to/npm/bin/opencode", "--server", "{url}"] },
-  { "label": "rs-server", "server": ["/path/to/npm/bin/opencode", "serve", "--port", "0"], "client": ["/path/to/opencode-rs", "--server", "{url}"], "env": { "OPENCODE_TS_BIN": "/path/to/npm/bin/opencode" } },
+  { "label": "rs-server", "server": ["/path/to/npm/bin/opencode", "serve", "--port", "0"], "client": ["/path/to/opencode-native", "--server", "{url}"], "env": { "OPENCODE_TS_BIN": "/path/to/npm/bin/opencode" } },
   { "label": "ts-aot-server", "server": ["/path/to/aot/opencode", "serve", "--port", "0"], "client": ["/path/to/aot/opencode", "--server", "{url}"] },
-  { "label": "rs+aot-server", "server": ["/path/to/aot/opencode", "serve", "--port", "0"], "client": ["/path/to/opencode-rs", "--server", "{url}"], "env": { "OPENCODE_TS_BIN": "/path/to/aot/opencode" } }
+  { "label": "rs+aot-server", "server": ["/path/to/aot/opencode", "serve", "--port", "0"], "client": ["/path/to/opencode-native", "--server", "{url}"], "env": { "OPENCODE_TS_BIN": "/path/to/aot/opencode" } }
 ]

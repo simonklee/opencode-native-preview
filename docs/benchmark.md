@@ -1,8 +1,9 @@
 # Startup and memory benchmark
 
-Measured 2026-11-12 on one machine, with the builds testers get: the `opencode-rs` preview `0.0.0-rs-2` and
-`@opencode/cli@2.2.7` from npm. `opencode-rs` is a client only. It starts the TypeScript `opencode` server (or
-connects to one that is already running), so every `opencode-rs` row also contains a TypeScript server.
+Measured 2026-11-12 on one machine, with the builds testers get: the `opencode-native` preview `0.0.0-rs-2` (built
+while the command was still named `opencode-rs`) and `@opencode/cli@2.2.7` from npm. `opencode-native` is a client
+only. It starts the TypeScript `opencode` server (or connects to one that is already running), so every
+`opencode-native` row also contains a TypeScript server.
 
 ## Results
 
@@ -14,19 +15,19 @@ ready, CPU) move with load, so compare them within this batch rather than with o
 | label | client | server | first frame | ready | tree peak | client peak | server peak | CPU total | client CPU | server CPU |
 |---|---|---|---|---|---|---|---|---|---|---|
 | `ts` | TS 2.2.7 | npm 2.2.7, standalone | 314 ms [275–449] | 627 ms [538–864] | 604 MB [595–616] | 306 MB [298–313] | 381 MB [362–387] | 6.93 s [6.35–7.71] | 4.15 s [3.71–4.67] | 2.79 s [2.64–3.04] |
-| `rs` | `opencode-rs` | npm 2.2.7, standalone | 219 ms [178–274] | 491 ms [432–563] | 410 MB [400–421] | 44 MB [44–44] | 374 MB [366–382] | 2.79 s [2.64–3.08] | 0.16 s [0.15–0.21] | 2.63 s [2.49–2.87] |
+| `rs` | `opencode-native` | npm 2.2.7, standalone | 219 ms [178–274] | 491 ms [432–563] | 410 MB [400–421] | 44 MB [44–44] | 374 MB [366–382] | 2.79 s [2.64–3.08] | 0.16 s [0.15–0.21] | 2.63 s [2.49–2.87] |
 | `ts-aot` | TS 2.2.7 AoT¹ | AoT¹ 2.2.7, standalone | 205 ms [160–256] | 349 ms [333–519] | 419 MB [418–422] | 189 MB [187–194] | 271 MB [270–273] | 2.73 s [2.39–3.12] | 1.85 s [1.64–2.16] | 0.86 s [0.77–0.97] |
-| `rs+aot` | `opencode-rs` | AoT¹ 2.2.7, standalone | 118 ms [115–133] | 288 ms [283–353] | 305 MB [304–306] | 44 MB [43–44] | 266 MB [263–267] | 0.92 s [0.90–1.03] | 0.14 s [0.13–0.16] | 0.78 s [0.77–0.86] |
+| `rs+aot` | `opencode-native` | AoT¹ 2.2.7, standalone | 118 ms [115–133] | 288 ms [283–353] | 305 MB [304–306] | 44 MB [43–44] | 266 MB [263–267] | 0.92 s [0.90–1.03] | 0.14 s [0.13–0.16] | 0.78 s [0.77–0.86] |
 | `ts-server` | TS 2.2.7 | npm 2.2.7, running | 118 ms [114–180] | 425 ms [402–502] | 610 MB [607–611] | 319 MB [316–320] | 330 MB [319–335] | 6.54 s [6.31–6.77] | 3.92 s [3.73–4.04] | 2.63 s [2.53–2.72] |
-| `rs-server` | `opencode-rs` | npm 2.2.7, running | 5.8 ms [4.4–10.6] | 454 ms [281–609] | 367 MB [365–372] | 44 MB [43–44] | 331 MB [327–333] | 2.84 s [2.57–3.14] | 0.17 s [0.15–0.20] | 2.69 s [2.41–2.95] |
+| `rs-server` | `opencode-native` | npm 2.2.7, running | 5.8 ms [4.4–10.6] | 454 ms [281–609] | 367 MB [365–372] | 44 MB [43–44] | 331 MB [327–333] | 2.84 s [2.57–3.14] | 0.17 s [0.15–0.20] | 2.69 s [2.41–2.95] |
 | `ts-aot-server` | TS 2.2.7 AoT¹ | AoT¹ 2.2.7, running | 63 ms [57–102] | 253 ms [240–487] | 416 MB [413–419] | 188 MB [186–192] | 270 MB [269–273] | 2.72 s [2.56–3.31] | 1.90 s [1.76–2.26] | 0.82 s [0.80–1.05] |
-| `rs+aot-server` | `opencode-rs` | AoT¹ 2.2.7, running | 4.4 ms [4.0–5.9] | 374 ms [224–413] | 302 MB [297–307] | 44 MB [43–44] | 263 MB [260–267] | 1.23 s [1.10–1.36] | 0.20 s [0.17–0.21] | 1.04 s [0.92–1.15] |
+| `rs+aot-server` | `opencode-native` | AoT¹ 2.2.7, running | 4.4 ms [4.0–5.9] | 374 ms [224–413] | 302 MB [297–307] | 44 MB [43–44] | 263 MB [260–267] | 1.23 s [1.10–1.36] | 0.20 s [0.17–0.21] | 1.04 s [0.92–1.15] |
 
 ¹ AoT: the same `v2.2.7` source compiled ahead of time with an unreleased Bun (bun#48120, see "Versions"). It is not
 a build anyone can install; it shows where the TypeScript side could go, and how much of the remaining cost is the
 server.
 
-"standalone": the client starts its own private server (`opencode --standalone` and `opencode-rs --standalone` both
+"standalone": the client starts its own private server (`opencode --standalone` and `opencode-native --standalone` both
 spawn `<opencode> serve --stdio --port 0`). "running": the harness starts `<opencode> serve --port 0` first, waits for
 its URL plus 1 s, then starts the client with `--server <url>`. The first frame then leaves out server startup; the
 tree still includes the server for its whole life, so memory and CPU stay comparable with the standalone rows.
@@ -38,7 +39,7 @@ What the rows say:
   With a server already running, it draws its first frame in 5.8 ms against 118 ms.
 - **The server is now most of the cost.** In the `rs` row the server holds 374 of 410 MB and uses 2.63 of 2.79 s CPU.
   Replacing the client takes the whole tree from 604 to 410 MB (−32%) and from 6.9 to 2.8 s CPU (−60%); the rest
-  is the TypeScript server, which `opencode-rs` still needs.
+  is the TypeScript server, which `opencode-native` still needs.
 - **Standalone startup is mostly server start.** With the client starting its own server, the Rust client's first
   frame (219 ms) is the server's spawn, its ready line and one `fs/list` round trip, plus a few ms of client work.
   The AoT server cuts that to 118 ms.
@@ -87,19 +88,19 @@ tree_peak_rss_mb, client_peak_rss_mb, server_peak_rss_mb, cpu_total_s, cpu_clien
 
 ## The video
 
-[`demo-c82a3c8d.mp4`](demo-c82a3c8d.mp4) (1920×1080, 30 fps, 8 s) is one real run, not sped up. It shows the client alone: both
+[`demo-2a83f6c8.mp4`](demo-2a83f6c8.mp4) (1920×1080, 30 fps, 8 s) is one real run, not sped up. It shows the client alone: both
 clients attach to a TypeScript server that is already running.
 
 [`bench/video.ts`](../bench/video.ts) gives each side its own sandbox, mock provider and `opencode` 2.2.7 server
 (`serve --port 0`, the npm binary), each pinned to its own CPUs (2–4,10–12 for TypeScript, 5–7,13–15 for Rust). It
-waits for both servers' URLs plus 2 s, then starts `opencode --server <url>` and `opencode-rs --server <url>` back to
+waits for both servers' URLs plus 2 s, then starts `opencode --server <url>` and `opencode-native --server <url>` back to
 back, each in a 100×40 PTY. Once both show the idle prompt it types the same prompt into both. Every 1/60 s it stores
 both screens (cell text and colors), the first frame, the ready time, and the RSS of each client and each server, with
 the wall-clock time since the clients started. [`bench/render.ts`](../bench/render.ts) draws each snapshot as an SVG
 (JetBrains Mono, block characters as exact rectangles), `rsvg-convert -w 1920 -h 1080` renders it to a PNG with
 9×20 px cells, and frame *k* of the video shows the last snapshot taken at or before *k*/30 s. A 0.5 s lead with empty
 panes and the clock at 0 comes first. `ffmpeg` encodes the frames as H.264 High, level 4.1 (`crf 16`, `yuv420p`,
-`+faststart`, no audio). The README's inline [`demo-c546f0ce.gif`](demo-c546f0ce.gif) is the same 1080p30 frames from the lossless
+`+faststart`, no audio). The README's inline [`demo-7e86153a.gif`](demo-7e86153a.gif) is the same 1080p30 frames from the lossless
 master, with one palette built from the whole clip (`palettegen=stats_mode=diff`) and no dithering
 (`paletteuse=dither=none:diff_mode=rectangle`); its frame delays alternate 3 and 4 cs, 8.0 s in all.
 
@@ -113,7 +114,7 @@ Rust 4.1 ms). The video's peaks are lower than the table's because it runs one p
 
 | what | version | sha256 |
 |---|---|---|
-| `opencode-rs` | `0.0.0-rs-2`, `x86_64-unknown-linux-gnu` release asset (OpenCode `oc-rust` `b05d82ca3e`, OpenTUI `c8189e2c76`, `dist` profile) | `9ccd60e9…ac5254` |
+| `opencode-native` | `0.0.0-rs-2`, `x86_64-unknown-linux-gnu` release asset `opencode-rs-0.0.0-rs-2-x86_64-unknown-linux-gnu.tar.gz` (OpenCode `oc-rust` `b05d82ca3e`, OpenTUI `c8189e2c76`, `dist` profile) | `9ccd60e9…ac5254` |
 | TypeScript CLI | `@opencode/cli@2.2.7` from npm (`bin/opencode.exe`) | `589253d3…cf5e1` |
 | AoT build | tag `v2.2.7` (`fedc6f208a`), `packages/cli/script/build.ts --single` unchanged except `compile.aot = true`, built with Bun from bun#48120 (`1.4.4-canary.1+9c306aadd`) | `477e0c85…e3c555` |
 | harness | Bun 1.4.4, `@xterm/headless` 5.5.0 | |

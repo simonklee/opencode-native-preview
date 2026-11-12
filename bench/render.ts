@@ -35,7 +35,7 @@ const defaultBg = "#000000"
 const page = "#16181d"
 const titles = [
   { name: `opencode ${meta.versions.ts.replace(/^opencode v/, "")}`, kind: "TypeScript client", accent: "#7f8fb0" },
-  { name: `opencode-rs ${meta.versions.rs}`, kind: "Rust client", accent: "#e0703a" },
+  { name: `opencode-native ${meta.versions.rs}`, kind: "Native client", accent: "#e0703a" },
 ]
 
 // Block and heavy-line characters drawn as exact rectangles so they tile without seams: [x, y, w, h] in the cell.
@@ -78,7 +78,7 @@ function svg(snap: Snapshot, t: number) {
     `<style>text{font-family:"JetBrains Mono";white-space:pre}.c{font-size:${font}px}</style>`,
     `<rect width="${W}" height="${H}" fill="${page}"/>`,
     `<text x="${margin}" y="62" font-size="30" font-weight="bold" fill="#e6edf3">Client only: both attach to a TypeScript server that is already running</text>`,
-    `<text x="${margin}" y="104" font-size="22" fill="#9198a1">opencode ${meta.versions.ts.replace(/^opencode v/, "")} (left) and opencode-rs ${meta.versions.rs} (right) launched at the same moment with --server</text>`,
+    `<text x="${margin}" y="104" font-size="22" fill="#9198a1">opencode ${meta.versions.ts.replace(/^opencode v/, "")} (left) and opencode-native ${meta.versions.rs} (right) launched at the same moment with --server</text>`,
   ]
   snap.sides.forEach((side, i) => {
     const x0 = margin + i * (paneW + gap)

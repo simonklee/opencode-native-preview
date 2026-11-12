@@ -7,7 +7,7 @@
 // matrix.json is a list of targets. Each target runs once per round; rounds interleave targets so
 // load drift on a shared machine hits every target alike.
 //   { "label": "npm", "client": ["/path/opencode", "--standalone"] }
-//   { "label": "rs", "server": ["/path/opencode", "serve", "--port", "0"], "client": ["/path/opencode-rs", "--server", "{url}"] }
+//   { "label": "rs", "server": ["/path/opencode", "serve", "--port", "0"], "client": ["/path/opencode-native", "--server", "{url}"] }
 // With "server", the harness starts the server first (its own process tree), waits for its URL on stdout,
 // and substitutes {url} and {password} into the client command. Without it, the client starts whatever
 // server it runs itself (opencode --standalone spawns `opencode serve --stdio` as a child).

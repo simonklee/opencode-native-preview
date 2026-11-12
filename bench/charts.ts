@@ -1,13 +1,16 @@
 // README charts in the opencode-native card style (static SVG, light and dark variants) from a results CSV.
-//   bun charts.ts results.csv outdir
+//   bun charts.ts results.csv outdir [readme]
+// Files are named <name>-<first 8 hex of sha256>.svg so a changed chart gets a new URL (GitHub caches docs/ files by
+// URL). Older hashed files of the same name are removed, and the references in [readme] are updated.
 // client.svg: the client alone, against a server that is already running (labels ts-server, rs-server).
 // standalone.svg: the client starts its own server (labels ts, rs).
 // Tokens: x-card/design.md (opencode.ai/data): mono type, ink #161616, muted #5c5c5c, Native #ff8904,
 // TypeScript #7c86ff, square flat bars, dotted row rules.
-import { readFileSync } from "node:fs"
+import { createHash } from "node:crypto"
+import { readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import path from "node:path"
 
-const [file, outdir] = process.argv.slice(2) as [string, string]
+const [file, outdir, readme] = process.argv.slice(2) as [string, string, string | undefined]
 const [head, ...lines] = readFileSync(file, "utf8").trim().split("\n")
 const keys = head!.split(",")
 const rows = lines.map((l) => Object.fromEntries(l.split(",").map((v, i) => [keys[i], v]))).filter((r) => !r.error)
@@ -100,17 +103,23 @@ async function write(name: string, alt: string, sections: ((y: number) => Return
     y += 18
     body.push(`<text class="s" x="0" y="${y}">${note}</text>`)
   }
-  for (const [suffix, colors] of [["", themes.light], ["-dark", themes.dark]] as const)
-    await Bun.write(
-      path.join(outdir, `${name}${suffix}.svg`),
-      // Each variant paints its own background, so it stays readable when GitHub's theme and the OS scheme differ.
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${W + 2 * pad}" height="${y + 8 + 2 * pad}" viewBox="0 0 ${W + 2 * pad} ${y + 8 + 2 * pad}" role="img" aria-label="${alt}">${style(colors)}<rect width="100%" height="100%" fill="${colors.bg}"/><g transform="translate(${pad} ${pad})">${body.join("")}</g></svg>\n`,
-    )
+  for (const [suffix, colors] of [["", themes.light], ["-dark", themes.dark]] as const) {
+    // Each variant paints its own background, so it stays readable when GitHub's theme and the OS scheme differ.
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W + 2 * pad}" height="${y + 8 + 2 * pad}" viewBox="0 0 ${W + 2 * pad} ${y + 8 + 2 * pad}" role="img" aria-label="${alt}">${style(colors)}<rect width="100%" height="100%" fill="${colors.bg}"/><g transform="translate(${pad} ${pad})">${body.join("")}</g></svg>\n`
+    const stem = `${name}${suffix}`
+    const hashed = `${stem}-${createHash("sha256").update(svg).digest("hex").slice(0, 8)}.svg`
+    const pattern = new RegExp(`^${stem}-[0-9a-f]{8}\\.svg$`)
+    for (const old of readdirSync(outdir).filter((f) => pattern.test(f) && f !== hashed)) rmSync(path.join(outdir, old))
+    await Bun.write(path.join(outdir, hashed), svg)
+    if (readme)
+      writeFileSync(readme, readFileSync(readme, "utf8").replace(new RegExp(`docs/${stem}-[0-9a-f]{8}\\.svg`, "g"), `docs/${hashed}`))
+    console.log(hashed)
+  }
 }
 
 const ms = (v: number) => (v < 10 ? v.toFixed(1) : Math.round(v).toString())
 const sides = ["rs", "ts"] as const
-const versions = "Native: opencode-rs 0.0.0-rs-2 · TypeScript: opencode 2.2.7 · AMD Ryzen 7 9800X3D, Linux"
+const versions = "Native: opencode-native 0.0.0-rs-2 · TypeScript: opencode 2.2.7 · AMD Ryzen 7 9800X3D, Linux"
 
 await write(
   "client",
