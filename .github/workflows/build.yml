@@ -27,7 +27,6 @@ env:
   BUN_VERSION: "1.4.1"
   # The oldest TypeScript CLI the client is tested against (share-builds.md 1.2).
   OPENCODE_TS_MIN: "2.2.7"
-  VERSION: 0.0.0-native-${{ github.run_number }}
   CARGO_TERM_COLOR: always
 
 jobs:
@@ -40,6 +39,7 @@ jobs:
       header_fnv1a64: ${{ steps.plan.outputs.header_fnv1a64 }}
       skip: ${{ steps.plan.outputs.skip }}
       bin: ${{ steps.plan.outputs.bin }}
+      version: ${{ steps.plan.outputs.version }}
     steps:
       - id: plan
         env:
@@ -65,7 +65,13 @@ jobs:
             /^\[/ { inbin = 0 }
             inbin && /^name *=/ { name = $0; sub(/^name *= *"/, "", name); sub(/".*/, "", name) }
             inbin && /^path *= *"src\/main\.rs"/ { print name; exit }')
-          case $bin in opencode-rs | opencode-native) ;; *) echo "unexpected client binary name '$bin'"; exit 1 ;; esac
+          # The version prefix follows the name: a pre-rename client recognizes only 0.0.0-rs-<run> as a preview, and
+          # its `upgrade` then points at the install script instead of updating the TypeScript CLI.
+          case $bin in
+            opencode-rs) version=0.0.0-rs-$GITHUB_RUN_NUMBER ;;
+            opencode-native) version=0.0.0-native-$GITHUB_RUN_NUMBER ;;
+            *) echo "unexpected client binary name '$bin'"; exit 1 ;;
+          esac
           skip=false
           if [ "$GITHUB_EVENT_NAME" = schedule ]; then
             last=$(gh release list -R "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName // ""')
@@ -81,8 +87,9 @@ jobs:
             echo "header_fnv1a64=$hash"
             echo "skip=$skip"
             echo "bin=$bin"
+            echo "version=$version"
           } | tee -a "$GITHUB_OUTPUT"
-          echo "$REF -> $commit (dev base $dev_base), OpenTUI $rev ($hash), binary $bin, skip=$skip" >> "$GITHUB_STEP_SUMMARY"
+          echo "$REF -> $commit (dev base $dev_base), OpenTUI $rev ($hash), binary $bin, version $version, skip=$skip" >> "$GITHUB_STEP_SUMMARY"
 
   build:
     needs: plan
@@ -105,6 +112,7 @@ jobs:
     env:
       TARGET: ${{ matrix.target }}
       BIN: ${{ needs.plan.outputs.bin }}
+      VERSION: ${{ needs.plan.outputs.version }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -150,7 +158,7 @@ jobs:
         working-directory: opencode/packages/cli-rs
         env:
           OPENTUI_LIB_DIR: ${{ github.workspace }}/native
-          OPENCODE_VERSION: ${{ env.VERSION }}
+          OPENCODE_VERSION: ${{ needs.plan.outputs.version }}
           # The client reads OPENCODE_NATIVE_COMMIT since the rename and OPENCODE_RS_COMMIT before it.
           OPENCODE_NATIVE_COMMIT: ${{ needs.plan.outputs.commit }}
           OPENCODE_RS_COMMIT: ${{ needs.plan.outputs.commit }}
@@ -281,6 +289,7 @@ jobs:
     env:
       TARGET: x86_64-pc-windows-msvc
       BIN: ${{ needs.plan.outputs.bin }}
+      VERSION: ${{ needs.plan.outputs.version }}
     defaults:
       run:
         shell: bash
@@ -311,7 +320,7 @@ jobs:
         working-directory: opencode/packages/cli-rs
         env:
           OPENTUI_LIB_DIR: ${{ github.workspace }}\native
-          OPENCODE_VERSION: ${{ env.VERSION }}
+          OPENCODE_VERSION: ${{ needs.plan.outputs.version }}
           OPENCODE_NATIVE_COMMIT: ${{ needs.plan.outputs.commit }}
           OPENCODE_RS_COMMIT: ${{ needs.plan.outputs.commit }}
           RUSTFLAGS: -C target-feature=+crt-static
@@ -354,6 +363,7 @@ jobs:
       OPENTUI_REV: ${{ needs.plan.outputs.opentui_rev }}
       HEADER: ${{ needs.plan.outputs.header_fnv1a64 }}
       REF: ${{ inputs.ref || 'oc-rust' }}
+      VERSION: ${{ needs.plan.outputs.version }}
     steps:
       - uses: actions/download-artifact@v5
         with:

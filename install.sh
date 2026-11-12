@@ -58,7 +58,8 @@ base=https://github.com/$REPO/releases/download/v$version
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "could not download $base/SHA256SUMS"
-# Releases from before the rename (0.0.0-rs-*) name the archive and the binary opencode-rs.
+# Releases published before the rename (up to v0.0.0-rs-2) name the archive and the binary opencode-rs. Later ones
+# use opencode-native, also when the version is 0.0.0-rs-<run> (a client built from a commit before the rename).
 name=opencode-native
 grep -q "opencode-native-$version-$target.tar.gz" "$tmp/SHA256SUMS" || name=opencode-rs
 archive=$name-$version-$target.tar.gz
