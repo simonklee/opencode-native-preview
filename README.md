@@ -6,9 +6,9 @@ arm64, and macOS arm64, for testers.
 
 ## Startup and memory
 
-![opencode 2.2.7 and opencode-rs side by side, attaching to a running server and answering one prompt](docs/demo.gif)
+![opencode 2.2.7 and opencode-rs side by side, attaching to a running server and answering one prompt](docs/demo-c546f0ce.gif)
 
-[Watch as video](docs/demo.mp4) (MP4, 1080p).
+[Watch as video](docs/demo-c82a3c8d.mp4) (MP4, 1080p).
 
 The client alone, against a TypeScript server that is already running (median of 8 runs):
 
@@ -19,8 +19,8 @@ The client alone, against a TypeScript server that is already running (median of
 | client CPU time, 20 prompts | 3.92 s | 0.17 s |
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/client-dark.svg">
-  <img alt="Client only, server already running. Startup: Native 5.8 ms, TypeScript 118 ms. Memory: Native 44 MB, TypeScript 319 MB. CPU: Native 0.17 s, TypeScript 3.92 s." src="docs/client.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/client-dark-25b5c69b.svg">
+  <img alt="Client only, server already running. Startup: Native 5.8 ms, TypeScript 118 ms. Memory: Native 44 MB, TypeScript 319 MB. CPU: Native 0.17 s, TypeScript 3.92 s." src="docs/client-a1fa256a.svg">
 </picture>
 
 The client starts its own server (`--standalone`):
@@ -32,8 +32,8 @@ The client starts its own server (`--standalone`):
 | client + server CPU time, 20 prompts | 6.93 s | 2.79 s |
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/standalone-dark.svg">
-  <img alt="Client starts its own server. Startup: Native 219 ms, TypeScript 314 ms. Memory: Native 44 MB client, 410 MB with the server; TypeScript 306 MB client, 604 MB with the server." src="docs/standalone.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/standalone-dark-77660d44.svg">
+  <img alt="Client starts its own server. Startup: Native 219 ms, TypeScript 314 ms. Memory: Native 44 MB client, 410 MB with the server; TypeScript 306 MB client, 604 MB with the server." src="docs/standalone-aaa1ba53.svg">
 </picture>
 
 `opencode-rs` replaces only the client: the TypeScript server holds 374 of its 410 MB. The method, raw data, and
