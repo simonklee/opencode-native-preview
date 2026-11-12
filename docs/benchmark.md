@@ -87,7 +87,7 @@ tree_peak_rss_mb, client_peak_rss_mb, server_peak_rss_mb, cpu_total_s, cpu_clien
 
 ## The video
 
-[`demo.mp4`](demo.mp4) (2560×1440, 60 fps, 8 s) is one real run, not sped up. It shows the client alone: both
+[`demo.mp4`](demo.mp4) (1920×1080, 30 fps, 8 s) is one real run, not sped up. It shows the client alone: both
 clients attach to a TypeScript server that is already running.
 
 [`bench/video.ts`](../bench/video.ts) gives each side its own sandbox, mock provider and `opencode` 2.2.7 server
@@ -96,9 +96,10 @@ waits for both servers' URLs plus 2 s, then starts `opencode --server <url>` and
 back, each in a 100×40 PTY. Once both show the idle prompt it types the same prompt into both. Every 1/60 s it stores
 both screens (cell text and colors), the first frame, the ready time, and the RSS of each client and each server, with
 the wall-clock time since the clients started. [`bench/render.ts`](../bench/render.ts) draws each snapshot as an SVG
-(JetBrains Mono, 12×26 px cells, block characters as exact rectangles), `rsvg-convert` turns it into a PNG, and frame
-*k* of the video shows the last snapshot taken at or before *k*/60 s. A 0.5 s lead with empty panes and the clock at
-0 comes first. `ffmpeg` encodes the frames as H.264 (`crf 16`, `yuv420p`, `+faststart`).
+(JetBrains Mono, block characters as exact rectangles), `rsvg-convert -w 1920 -h 1080` renders it to a PNG with
+9×20 px cells, and frame *k* of the video shows the last snapshot taken at or before *k*/30 s. A 0.5 s lead with empty
+panes and the clock at 0 comes first. `ffmpeg` encodes the frames as H.264 High, level 4.1 (`crf 16`, `yuv420p`,
+`+faststart`, no audio).
 
 Thirteen takes were recorded. Nine came before the final setup: five with the project outside the sandbox `HOME` and
 four that checked that the snapshot rate does not change the timing (1 s vs 1/60 s). Their first frames were

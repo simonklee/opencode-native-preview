@@ -22,7 +22,8 @@ const snaps = lines.map((l) => JSON.parse(l) as Snapshot)
 const W = 2560
 const H = 1440
 const cw = 12
-const ch = 26
+// Row pitch: 26 px at 2560×1440; --ch 26.6667 makes rows whole pixels when rendered at 1920×1080 (scale 0.75).
+const ch = Number(opt.ch ?? 26)
 const font = 20
 const margin = 60
 const gap = 40
