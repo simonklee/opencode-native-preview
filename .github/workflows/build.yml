@@ -521,6 +521,70 @@ jobs:
           path: ${{ runner.temp }}\smoke
           if-no-files-found: ignore
 
+  # The workspace's tests on Windows, to list what fails there. Informational: may fail, and release does not need it.
+  windows-test:
+    needs: [plan, native-windows]
+    if: needs.plan.outputs.skip != 'true'
+    runs-on: windows-2025
+    continue-on-error: true
+    timeout-minutes: 150
+    env:
+      TARGET: x86_64-pc-windows-msvc
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          repository: anomalyco/opencode
+          ref: ${{ needs.plan.outputs.commit }}
+          path: opencode
+          persist-credentials: false
+          sparse-checkout: |
+            packages/cli-rs
+            packages/ui/src/assets/audio
+      - uses: actions/download-artifact@v5
+        with:
+          name: native-x86_64-pc-windows-msvc
+          path: native
+      - name: Rust
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --target "$TARGET"
+          rustup default "$RUST_VERSION"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: opencode/packages/cli-rs -> target
+          key: ${{ env.TARGET }}-test
+          save-if: ${{ github.event_name == 'schedule' || github.ref == 'refs/heads/main' }}
+      - name: cargo test
+        working-directory: opencode/packages/cli-rs
+        env:
+          OPENTUI_LIB_DIR: ${{ github.workspace }}\native
+          OPENCODE_VERSION: ${{ needs.plan.outputs.version }}
+          OPENCODE_NATIVE_COMMIT: ${{ needs.plan.outputs.commit }}
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: |
+          set -o pipefail
+          mkdir -p "$RUNNER_TEMP/test"
+          # opentui.dll must be on PATH for the test binaries.
+          PATH="$GITHUB_WORKSPACE/native:$PATH" cargo test --locked --workspace --target "$TARGET" --no-fail-fast \
+            2>&1 | tee "$RUNNER_TEMP/test/cargo-test.txt"
+      - if: always()
+        name: Summary
+        run: |
+          f=$RUNNER_TEMP/test/cargo-test.txt
+          [ -f "$f" ] || exit 0
+          {
+            echo '### cargo test on Windows'
+            grep -E '^test result:|^error: test failed|^    [A-Za-z0-9_:]+$' "$f" || true
+          } >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-test-output
+          path: ${{ runner.temp }}/test/
+          if-no-files-found: ignore
+
   release:
     needs: [plan, build]
     if: always() && needs.plan.outputs.skip != 'true' && needs.build.result == 'success'
