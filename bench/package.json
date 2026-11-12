@@ -1,0 +1,8 @@
+{
+  "name": "oc-aot-bench-harness",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@xterm/headless": "5.5.0"
+  }
+}
