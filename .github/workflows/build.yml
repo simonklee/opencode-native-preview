@@ -540,9 +540,8 @@ jobs:
           ref: ${{ needs.plan.outputs.commit }}
           path: opencode
           persist-credentials: false
-          sparse-checkout: |
-            packages/cli-rs
-            packages/ui/src/assets/audio
+          # The whole tree: tests read fixtures outside packages/cli-rs (themes in packages/tui, the TS sources
+          # some parity checks compare against).
       - uses: actions/download-artifact@v5
         with:
           name: native-x86_64-pc-windows-msvc
