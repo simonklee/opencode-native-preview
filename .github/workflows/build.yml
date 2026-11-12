@@ -278,8 +278,8 @@ jobs:
           path: native/
           if-no-files-found: error
 
-  # The client does not compile on Windows until the port lands; this job may fail, and the release
-  # takes its archive only when it passed.
+  # The Windows build and its smoke tests (W10). The job may fail and stays out of the release until W12: its
+  # artifacts are named windows-*, which the release's dist-* pattern does not match.
   windows:
     needs: [plan, native-windows]
     if: needs.plan.outputs.skip != 'true'
@@ -339,17 +339,140 @@ jobs:
           ls -l stage dist
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ env.TARGET }}
+          name: windows-dist-${{ env.TARGET }}
           path: dist/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: debug-${{ env.TARGET }}
+          name: windows-debug-${{ env.TARGET }}
           path: debug/
           retention-days: 90
 
+      - name: Smoke 1 - version (pwsh)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = & stage\opencode-native.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "--version exited $LASTEXITCODE" }
+          "$out"
+          if ("$out" -notlike "*$env:VERSION*") { throw "--version printed '$out', not $env:VERSION" }
+
+      - name: Smoke 2 - dependents are system DLLs and opentui.dll (+crt-static)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -find 'VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe' | Select-Object -First 1
+          if (-not $dumpbin) { throw 'dumpbin.exe not found' }
+          $text = & $dumpbin /nologo /dependents stage\opencode-native.exe
+          $text
+          $deps = $text | Where-Object { $_ -match '^\s+\S+\.dll\s*$' } | ForEach-Object { $_.Trim().ToLowerInvariant() }
+          if (-not ($deps -contains 'opentui.dll')) { throw 'opentui.dll is not a dependent' }
+          $crt = $deps | Where-Object { $_ -match '^(vcruntime|msvcp|ucrtbase|api-ms-win-crt-)' }
+          if ($crt) { throw "dynamic CRT imports (no +crt-static?): $($crt -join ', ')" }
+          $system = "$env:SystemRoot\System32"
+          $other = $deps | Where-Object {
+            $_ -ne 'opentui.dll' -and $_ -notmatch '^(api|ext)-ms-win-' -and -not (Test-Path (Join-Path $system $_))
+          }
+          if ($other) { throw "non-system dependents: $($other -join ', ')" }
+          "dependents: $($deps -join ', ')" | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
+
+      - name: Smoke 3 - without opentui.dll the loader fails with 0xC0000135
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'no-dll'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Copy-Item stage\opencode-native.exe $dir
+          # PATH without native\ or stage\, so no other opentui.dll is found.
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          $p = Start-Process -FilePath (Join-Path $dir 'opencode-native.exe') -ArgumentList '--version' `
+            -WorkingDirectory $dir -NoNewWindow -PassThru
+          $null = $p.Handle
+          if (-not $p.WaitForExit(60000)) { $p.Kill(); throw 'hung without opentui.dll' }
+          $code = '{0:X8}' -f $p.ExitCode
+          "exit 0x$code"
+          if ($code -ne 'C0000135') { throw "expected 0xC0000135 (STATUS_DLL_NOT_FOUND), got 0x$code" }
+
+      - name: Smoke 4 - TS opencode, session list, service stop (W5)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm install -g "@opencode/cli@latest" | Out-Null
+          "TypeScript CLI: $(opencode --version)" | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
+          "where opencode: $((where.exe opencode) -join ', ')" | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
+          $root = Join-Path $env:RUNNER_TEMP 'home'
+          $env:USERPROFILE = $root
+          $env:HOME = $root
+          $env:XDG_CONFIG_HOME = "$root\.config"
+          $env:XDG_DATA_HOME = "$root\.local\share"
+          $env:XDG_STATE_HOME = "$root\.local\state"
+          $env:XDG_CACHE_HOME = "$root\.cache"
+          foreach ($d in $env:XDG_CONFIG_HOME, $env:XDG_DATA_HOME, $env:XDG_STATE_HOME, $env:XDG_CACHE_HOME) {
+            New-Item -ItemType Directory -Force $d | Out-Null
+          }
+          $exe = Join-Path $env:GITHUB_WORKSPACE 'stage\opencode-native.exe'
+          Set-Location $env:RUNNER_TEMP
+          function Invoke-Bounded([string[]] $arguments, [string] $name) {
+            $p = Start-Process -FilePath $exe -ArgumentList $arguments -NoNewWindow -PassThru `
+              -RedirectStandardOutput "$name.out" -RedirectStandardError "$name.err"
+            $null = $p.Handle
+            if (-not $p.WaitForExit(180000)) { $p.Kill(); throw "$name timed out" }
+            Get-Content "$name.out", "$name.err"
+            return $p.ExitCode
+          }
+          try {
+            # JSON, so an empty list still proves the service answered.
+            $code = Invoke-Bounded @('session', 'list', '--format', 'json') 'session-list'
+            if ($code -ne 0) { throw "session list exited $code" }
+            $list = Get-Content -Raw session-list.out | ConvertFrom-Json -NoEnumerate
+            if ($list -isnot [array]) { throw 'session list did not print a JSON array' }
+            $registered = Get-ChildItem -Recurse -Filter 'service*.json' $root
+            "registered: $($registered.FullName -join ', ')"
+            if (-not $registered) { throw 'no service*.json after session list' }
+            $code = Invoke-Bounded @('service', 'stop') 'service-stop'
+            if ($code -ne 0) { throw "service stop exited $code" }
+            Start-Sleep -Seconds 2
+            $left = Get-ChildItem -Recurse -Filter 'service*.json' $root
+            if ($left) { throw "service*.json still there after service stop: $($left.FullName -join ', ')" }
+            $alive = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'serve --service' }
+            if ($alive) { throw "service still running: $($alive.ProcessId -join ', ')" }
+          } catch {
+            Get-ChildItem -Recurse -Filter '*.log' $root | ForEach-Object { "== $($_.FullName)"; Get-Content -Tail 60 $_ }
+            throw
+          } finally {
+            Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'serve --service' } |
+              ForEach-Object { Stop-Process -Force -Id $_.ProcessId -ErrorAction SilentlyContinue }
+          }
+
+      - name: Smoke 5 - TUI and prompts on a pseudoconsole (W10)
+        shell: pwsh
+        working-directory: opencode/packages/cli-rs
+        env:
+          OPENTUI_LIB_DIR: ${{ github.workspace }}\native
+          RUSTFLAGS: -C target-feature=+crt-static
+          OPENCODE_SMOKE_OUT: ${{ runner.temp }}\smoke
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # The test lands with W10; commits before it (the pushed oc-rust today) have nothing to run.
+          if (-not (Test-Path crates\cli\tests\windows_smoke.rs)) {
+            'windows_smoke.rs is not in this commit; skipped' | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+          $env:PATH = "$env:OPENTUI_LIB_DIR;$env:PATH"
+          cargo test --locked --target $env:TARGET -p opencode-cli --test windows_smoke -- --nocapture
+          if ($LASTEXITCODE -ne 0) { throw "windows_smoke failed ($LASTEXITCODE)" }
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-smoke-c.p
+          path: ${{ runner.temp }}\smoke
+          if-no-files-found: ignore
+
   release:
-    needs: [plan, build, windows]
+    needs: [plan, build]
     if: always() && needs.plan.outputs.skip != 'true' && needs.build.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
