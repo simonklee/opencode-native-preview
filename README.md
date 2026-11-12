@@ -72,6 +72,9 @@ This checks the newest build against `SHA256SUMS` and installs it to `~/.local/b
 `$OPENCODE_NATIVE_INSTALL_DIR`). Run it again to update. Linux builds need glibc 2.35 or newer. To verify an archive's
 build attestation: `gh attestation verify opencode-native-<version>-<target>.tar.gz --repo simonklee/opencode-native-preview`.
 
+On Debian and Ubuntu, download the `.deb` from the [latest release](https://github.com/simonklee/opencode-native-preview/releases)
+and run `sudo apt install ./opencode-native_*.deb`.
+
 ## Requirements
 
 Install the TypeScript CLI, 2.2.7 or newer, on `PATH` (or set `OPENCODE_TS_BIN` to it): `npm i -g @opencode/cli`.

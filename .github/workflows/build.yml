@@ -227,6 +227,30 @@ jobs:
           mkdir -p dist
           tar -czf "dist/$name.tar.gz" -C stage opencode-native LICENSE
           ls -l dist | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Debian package
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          case $TARGET in x86_64-*) arch=amd64 ;; aarch64-*) arch=arm64 ;; esac
+          # Without a revision, so the release version with each - turned into ~ (0.0.0~native~12) is valid.
+          debversion=${VERSION//-/\~}
+          root=$RUNNER_TEMP/deb
+          mkdir -p "$root/DEBIAN" "$root/usr/bin"
+          install -m 755 stage/opencode-native "$root/usr/bin/opencode-native"
+          cat > "$root/DEBIAN/control" <<EOF
+          Package: opencode-native
+          Version: $debversion
+          Architecture: $arch
+          Maintainer: Simon Klee <hello@simonklee.dk>
+          Depends: libc6 (>= 2.35), libgcc-s1
+          Section: devel
+          Priority: optional
+          Homepage: https://github.com/$GITHUB_REPOSITORY
+          Description: OpenCode native CLI (preview)
+           A Rust client for OpenCode. Needs the TypeScript opencode 2.2.7 or newer.
+          EOF
+          dpkg-deb --root-owner-group --build "$root" "dist/opencode-native_${debversion}_$arch.deb"
+          dpkg-deb --info "dist/opencode-native_${debversion}_$arch.deb"
       - uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.target }}
