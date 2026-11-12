@@ -32,11 +32,12 @@ const barMax = 390
 const barH = 26
 const gap = 8
 const rowPad = 22
+const pad = 20
 const em = 0.6 // advance of a monospace glyph, in em
 
 const themes = {
-  light: { ink: "#161616", muted: "#5c5c5c", subtle: "#707070", dots: "rgba(0,0,0,.22)" },
-  dark: { ink: "#ededed", muted: "#a3a3a3", subtle: "#8f8f8f", dots: "rgba(255,255,255,.25)" },
+  light: { bg: "#ffffff", ink: "#161616", muted: "#5c5c5c", subtle: "#707070", dots: "rgba(0,0,0,.22)" },
+  dark: { bg: "#0d1117", ink: "#ededed", muted: "#a3a3a3", subtle: "#8f8f8f", dots: "rgba(255,255,255,.25)" },
 }
 const style = (c: (typeof themes)["light"]) => `<style>
 text{font-family:${mono};fill:${c.ink}}
@@ -102,7 +103,8 @@ async function write(name: string, alt: string, sections: ((y: number) => Return
   for (const [suffix, colors] of [["", themes.light], ["-dark", themes.dark]] as const)
     await Bun.write(
       path.join(outdir, `${name}${suffix}.svg`),
-      `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${y + 8}" viewBox="0 0 ${W} ${y + 8}" role="img" aria-label="${alt}">${style(colors)}${body.join("")}</svg>\n`,
+      // Each variant paints its own background, so it stays readable when GitHub's theme and the OS scheme differ.
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${W + 2 * pad}" height="${y + 8 + 2 * pad}" viewBox="0 0 ${W + 2 * pad} ${y + 8 + 2 * pad}" role="img" aria-label="${alt}">${style(colors)}<rect width="100%" height="100%" fill="${colors.bg}"/><g transform="translate(${pad} ${pad})">${body.join("")}</g></svg>\n`,
     )
 }
 
