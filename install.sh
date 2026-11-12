@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Install or update the opencode-rs preview build.
+# Install or update the OpenCode native CLI preview build.
 #
-#   curl -fsSL https://raw.githubusercontent.com/simonklee/cli-rs-preview/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/simonklee/opencode-native-preview/main/install.sh | bash
 #
-# Installs the newest prerelease of simonklee/cli-rs-preview into ~/.local/bin/opencode-rs, or into
-# $OPENCODE_RS_INSTALL_DIR. Set OPENCODE_RS_VERSION (for example 0.0.0-rs-12) to install that build.
+# Installs the newest prerelease of simonklee/opencode-native-preview into ~/.local/bin/opencode-native, or into
+# $OPENCODE_NATIVE_INSTALL_DIR. Set OPENCODE_NATIVE_VERSION (for example 0.0.0-native-12) to install that build.
 set -euo pipefail
 
-REPO=simonklee/cli-rs-preview
+REPO=simonklee/opencode-native-preview
 TS_MIN=2.2.7
 GLIBC_MIN=2.35
-dir=${OPENCODE_RS_INSTALL_DIR:-$HOME/.local/bin}
+dir=${OPENCODE_NATIVE_INSTALL_DIR:-${OPENCODE_RS_INSTALL_DIR:-$HOME/.local/bin}} # the second name is the old one
 
-die() { printf 'opencode-rs install: %s\n' "$*" >&2; exit 1; }
+die() { printf 'opencode-native install: %s\n' "$*" >&2; exit 1; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
 # Whether version $1 is at least $2.
 at_least() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n 1)" = "$2" ]; }
@@ -45,8 +45,8 @@ else
   target=$arch-unknown-linux-gnu
 fi
 
-if [ -n "${OPENCODE_RS_VERSION:-}" ]; then
-  version=${OPENCODE_RS_VERSION#v}
+if [ -n "${OPENCODE_NATIVE_VERSION:-}" ]; then
+  version=${OPENCODE_NATIVE_VERSION#v}
 else
   # The newest release first; every preview is a prerelease, so /releases/latest would find none.
   version=$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=1" |
@@ -54,13 +54,16 @@ else
   [ -n "$version" ] || die "found no release in $REPO"
 fi
 
-archive=opencode-rs-$version-$target.tar.gz
 base=https://github.com/$REPO/releases/download/v$version
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-echo "Downloading opencode-rs $version ($target)"
-curl -fsSL -o "$tmp/$archive" "$base/$archive" || die "could not download $base/$archive"
 curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" || die "could not download $base/SHA256SUMS"
+# Releases from before the rename (0.0.0-rs-*) name the archive and the binary opencode-rs.
+name=opencode-native
+grep -q "opencode-native-$version-$target.tar.gz" "$tmp/SHA256SUMS" || name=opencode-rs
+archive=$name-$version-$target.tar.gz
+echo "Downloading opencode-native $version ($target)"
+curl -fsSL -o "$tmp/$archive" "$base/$archive" || die "could not download $base/$archive"
 
 expected=$(awk -v f="$archive" '$2 == f || $2 == "*" f {print $1}' "$tmp/SHA256SUMS")
 [ -n "$expected" ] || die "SHA256SUMS has no entry for $archive"
@@ -71,27 +74,30 @@ else
 fi
 [ "$actual" = "$expected" ] || die "checksum mismatch for $archive: got $actual, expected $expected"
 
-tar -xzf "$tmp/$archive" -C "$tmp" opencode-rs
+tar -xzf "$tmp/$archive" -C "$tmp" "$name"
 mkdir -p "$dir"
-# Replace by rename, so a running opencode-rs keeps its old file.
-cp "$tmp/opencode-rs" "$dir/.opencode-rs.new"
-chmod 755 "$dir/.opencode-rs.new"
-mv -f "$dir/.opencode-rs.new" "$dir/opencode-rs"
-echo "Installed $("$dir/opencode-rs" --version 2>/dev/null || echo "opencode-rs $version") to $dir/opencode-rs"
+# Replace by rename, so a running opencode-native keeps its old file.
+cp "$tmp/$name" "$dir/.opencode-native.new"
+chmod 755 "$dir/.opencode-native.new"
+mv -f "$dir/.opencode-native.new" "$dir/opencode-native"
+echo "Installed $("$dir/opencode-native" --version 2>/dev/null || echo "opencode-native $version") to $dir/opencode-native"
+if [ -e "$dir/opencode-rs" ]; then
+  echo "The client is now called opencode-native; you can remove the old $dir/opencode-rs."
+fi
 
 case ":$PATH:" in
   *":$dir:"*) ;;
-  *) warn "$dir is not on PATH; add it, or run $dir/opencode-rs" ;;
+  *) warn "$dir is not on PATH; add it, or run $dir/opencode-native" ;;
 esac
 
 # The client runs the TypeScript opencode for its server.
 if ! command -v opencode >/dev/null; then
-  warn "opencode (the TypeScript CLI) is not on PATH; opencode-rs needs it. Install it with: npm i -g @opencode/cli"
+  warn "opencode (the TypeScript CLI) is not on PATH; opencode-native needs it. Install it with: npm i -g @opencode/cli"
 else
   ts=$(opencode --version 2>/dev/null | head -n 1 | awk '{print $NF}')
   ts=${ts#v}
   case $ts in
     0.0.0-*) ;; # a dev or beta build, newer than any release it is based on
-    *) at_least "$ts" "$TS_MIN" || warn "opencode $ts is older than $TS_MIN, the oldest version opencode-rs is tested with; update it with: opencode upgrade" ;;
+    *) at_least "$ts" "$TS_MIN" || warn "opencode $ts is older than $TS_MIN, the oldest version opencode-native is tested with; update it with: opencode upgrade" ;;
   esac
 fi
