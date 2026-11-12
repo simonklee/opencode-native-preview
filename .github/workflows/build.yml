@@ -1,6 +1,7 @@
 name: build
 
-# Builds opencode-rs (packages/cli-rs of anomalyco/opencode) at `ref` for each preview platform and
+# Builds opencode-native, the OpenCode native CLI (packages/cli-rs of anomalyco/opencode), at `ref` for each preview
+# platform and
 # publishes one prerelease per build. The nightly run skips when `oc-rust` has not moved since the
 # last release.
 on:
@@ -26,7 +27,7 @@ env:
   BUN_VERSION: "1.4.1"
   # The oldest TypeScript CLI the client is tested against (share-builds.md 1.2).
   OPENCODE_TS_MIN: "2.2.7"
-  VERSION: 0.0.0-rs-${{ github.run_number }}
+  VERSION: 0.0.0-native-${{ github.run_number }}
   CARGO_TERM_COLOR: always
 
 jobs:
@@ -38,6 +39,7 @@ jobs:
       opentui_rev: ${{ steps.plan.outputs.opentui_rev }}
       header_fnv1a64: ${{ steps.plan.outputs.header_fnv1a64 }}
       skip: ${{ steps.plan.outputs.skip }}
+      bin: ${{ steps.plan.outputs.bin }}
     steps:
       - id: plan
         env:
@@ -56,6 +58,14 @@ jobs:
           hash=$(curl -fsSL "https://raw.githubusercontent.com/anomalyco/opentui/$rev/packages/rust/crates/opentui-sys/src/generated.rs" \
             | sed -nE 's/.*OPENTUI_HEADER_FNV1A64: u64 = (0x[0-9a-f_]+);.*/\1/p' | tr -d _)
           test -n "$hash"
+          # The Cargo name of the client binary: opencode-rs before the rename (O-114), opencode-native after.
+          # Every archive ships it as opencode-native. Drop this once a release has been built from the new name.
+          bin=$(git show "$commit:packages/cli-rs/crates/cli/Cargo.toml" | awk '
+            /^\[\[bin\]\]/ { inbin = 1; name = ""; next }
+            /^\[/ { inbin = 0 }
+            inbin && /^name *=/ { name = $0; sub(/^name *= *"/, "", name); sub(/".*/, "", name) }
+            inbin && /^path *= *"src\/main\.rs"/ { print name; exit }')
+          case $bin in opencode-rs | opencode-native) ;; *) echo "unexpected client binary name '$bin'"; exit 1 ;; esac
           skip=false
           if [ "$GITHUB_EVENT_NAME" = schedule ]; then
             last=$(gh release list -R "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[0].tagName // ""')
@@ -70,8 +80,9 @@ jobs:
             echo "opentui_rev=$rev"
             echo "header_fnv1a64=$hash"
             echo "skip=$skip"
+            echo "bin=$bin"
           } | tee -a "$GITHUB_OUTPUT"
-          echo "$REF -> $commit (dev base $dev_base), OpenTUI $rev ($hash), skip=$skip" >> "$GITHUB_STEP_SUMMARY"
+          echo "$REF -> $commit (dev base $dev_base), OpenTUI $rev ($hash), binary $bin, skip=$skip" >> "$GITHUB_STEP_SUMMARY"
 
   build:
     needs: plan
@@ -93,6 +104,7 @@ jobs:
     timeout-minutes: 150
     env:
       TARGET: ${{ matrix.target }}
+      BIN: ${{ needs.plan.outputs.bin }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -139,6 +151,8 @@ jobs:
         env:
           OPENTUI_LIB_DIR: ${{ github.workspace }}/native
           OPENCODE_VERSION: ${{ env.VERSION }}
+          # The client reads OPENCODE_NATIVE_COMMIT since the rename and OPENCODE_RS_COMMIT before it.
+          OPENCODE_NATIVE_COMMIT: ${{ needs.plan.outputs.commit }}
           OPENCODE_RS_COMMIT: ${{ needs.plan.outputs.commit }}
           MACOSX_DEPLOYMENT_TARGET: "13.0"
           CARGO_PROFILE_DIST_LTO: ${{ matrix.lto }}
@@ -146,33 +160,33 @@ jobs:
           CARGO_PROFILE_DIST_SPLIT_DEBUGINFO: ${{ runner.os == 'macOS' && 'packed' || 'off' }}
         run: |
           start=$(date +%s)
-          cargo build --locked --profile dist --target "$TARGET" --bin opencode-rs
+          cargo build --locked --profile dist --target "$TARGET" --bin "$BIN"
           echo "build: $(( $(date +%s) - start )) s" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Strip
         run: |
           set -euo pipefail
           mkdir -p stage debug
-          bin=opencode/packages/cli-rs/target/$TARGET/dist/opencode-rs
-          cp "$bin" stage/opencode-rs
+          bin=opencode/packages/cli-rs/target/$TARGET/dist/$BIN
+          cp "$bin" stage/opencode-native
           if [ "$RUNNER_OS" = macOS ]; then
-            # Cargo's opencode-rs.dSYM is a symlink into deps/; copy the bundle it points at.
-            cp -RL "$bin.dSYM" debug/
-            strip stage/opencode-rs
+            # Cargo's $BIN.dSYM is a symlink into deps/; copy the bundle it points at.
+            cp -RL "$bin.dSYM" debug/opencode-native.dSYM
+            strip stage/opencode-native
             # strip invalidates the linker's ad-hoc signature; arm64 macOS runs only signed code.
-            codesign --force --sign - stage/opencode-rs
+            codesign --force --sign - stage/opencode-native
           else
-            objcopy --only-keep-debug stage/opencode-rs debug/opencode-rs.debug
-            strip --strip-all stage/opencode-rs
-            objcopy --add-gnu-debuglink=debug/opencode-rs.debug stage/opencode-rs
-            echo "highest GLIBC: $(objdump -T stage/opencode-rs | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)" | tee -a "$GITHUB_STEP_SUMMARY"
+            objcopy --only-keep-debug stage/opencode-native debug/opencode-native.debug
+            strip --strip-all stage/opencode-native
+            objcopy --add-gnu-debuglink=debug/opencode-native.debug stage/opencode-native
+            echo "highest GLIBC: $(objdump -T stage/opencode-native | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1)" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
-          ls -l "$bin" stage/opencode-rs | tee -a "$GITHUB_STEP_SUMMARY"
+          ls -l "$bin" stage/opencode-native | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Smoke test
         run: |
           set -euo pipefail
-          out=$(stage/opencode-rs --version)
+          out=$(stage/opencode-native --version)
           echo "$out"
           case $out in *"$VERSION"*) ;; *) echo "--version printed '$out', not $VERSION"; exit 1 ;; esac
           npm install -g "@opencode/cli@latest" >/dev/null
@@ -181,7 +195,7 @@ jobs:
             XDG_STATE_HOME=$RUNNER_TEMP/home/.local/state XDG_CACHE_HOME=$RUNNER_TEMP/home/.cache
           mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_CACHE_HOME"
           cd "$RUNNER_TEMP"
-          stage=$GITHUB_WORKSPACE/stage/opencode-rs
+          stage=$GITHUB_WORKSPACE/stage/opencode-native
           # JSON, so an empty list still proves the service answered: the table prints nothing for none.
           "$stage" session list --format json > session-list.txt 2>&1 &
           pid=$!
@@ -201,9 +215,9 @@ jobs:
         run: |
           set -euo pipefail
           cp opencode/LICENSE stage/
-          name=opencode-rs-$VERSION-$TARGET
+          name=opencode-native-$VERSION-$TARGET
           mkdir -p dist
-          tar -czf "dist/$name.tar.gz" -C stage opencode-rs LICENSE
+          tar -czf "dist/$name.tar.gz" -C stage opencode-native LICENSE
           ls -l dist | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
@@ -266,6 +280,7 @@ jobs:
     timeout-minutes: 150
     env:
       TARGET: x86_64-pc-windows-msvc
+      BIN: ${{ needs.plan.outputs.bin }}
     defaults:
       run:
         shell: bash
@@ -297,19 +312,21 @@ jobs:
         env:
           OPENTUI_LIB_DIR: ${{ github.workspace }}\native
           OPENCODE_VERSION: ${{ env.VERSION }}
+          OPENCODE_NATIVE_COMMIT: ${{ needs.plan.outputs.commit }}
           OPENCODE_RS_COMMIT: ${{ needs.plan.outputs.commit }}
           RUSTFLAGS: -C target-feature=+crt-static
-        run: cargo build --locked --profile dist --target "$TARGET" --bin opencode-rs
+        run: cargo build --locked --profile dist --target "$TARGET" --bin "$BIN"
       - name: Package and smoke test
         run: |
           set -euo pipefail
           mkdir -p stage dist debug
-          cp "opencode/packages/cli-rs/target/$TARGET/dist/opencode-rs.exe" native/opentui.dll opencode/LICENSE stage/
-          cp "opencode/packages/cli-rs/target/$TARGET/dist/opencode_rs.pdb" debug/ || true
-          out=$(stage/opencode-rs.exe --version)
+          cp "opencode/packages/cli-rs/target/$TARGET/dist/$BIN.exe" stage/opencode-native.exe
+          cp native/opentui.dll opencode/LICENSE stage/
+          cp "opencode/packages/cli-rs/target/$TARGET/dist/${BIN//-/_}.pdb" debug/opencode_native.pdb || true
+          out=$(stage/opencode-native.exe --version)
           echo "$out"
           case $out in *"$VERSION"*) ;; *) echo "--version printed '$out', not $VERSION"; exit 1 ;; esac
-          (cd stage && 7z a -tzip "../dist/opencode-rs-$VERSION-$TARGET.zip" opencode-rs.exe opentui.dll LICENSE >/dev/null)
+          (cd stage && 7z a -tzip "../dist/opencode-native-$VERSION-$TARGET.zip" opencode-native.exe opentui.dll LICENSE >/dev/null)
           ls -l stage dist
       - uses: actions/upload-artifact@v4
         with:
@@ -353,7 +370,7 @@ jobs:
             --arg ts_min "$OPENCODE_TS_MIN" \
             --arg run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --argjson assets "$(ls | jq -R . | jq -s .)" \
-            '{version: $version,
+            '{version: $version, binary: "opencode-native",
               opencode: {repository: "anomalyco/opencode", ref: $ref, commit: $commit, dev_base: $dev_base},
               opentui: {repository: "anomalyco/opentui", rev: $rev, header_fnv1a64: $header},
               toolchain: {rust: $rust, zig: $zig, profile: "dist"},
@@ -369,7 +386,7 @@ jobs:
           set -euo pipefail
           short=${COMMIT:0:10}
           cat > notes.md <<EOF
-          Preview build of \`opencode-rs\` from [\`anomalyco/opencode@$short\`](https://github.com/anomalyco/opencode/commit/$COMMIT) (\`$REF\`; \`dev\` base [\`${DEV_BASE:0:10}\`](https://github.com/anomalyco/opencode/commit/$DEV_BASE)), OpenTUI [\`${OPENTUI_REV:0:10}\`](https://github.com/anomalyco/opentui/commit/$OPENTUI_REV).
+          Preview build of \`opencode-native\`, the OpenCode native CLI, from [\`anomalyco/opencode@$short\`](https://github.com/anomalyco/opencode/commit/$COMMIT) (\`$REF\`; \`dev\` base [\`${DEV_BASE:0:10}\`](https://github.com/anomalyco/opencode/commit/$DEV_BASE)), OpenTUI [\`${OPENTUI_REV:0:10}\`](https://github.com/anomalyco/opentui/commit/$OPENTUI_REV).
 
           Unsigned preview. Needs the TypeScript \`opencode\` $OPENCODE_TS_MIN or newer on \`PATH\`. Install or update:
 
@@ -380,4 +397,4 @@ jobs:
           Verify: \`sha256sum -c SHA256SUMS --ignore-missing\` and \`gh attestation verify <archive> --repo $GITHUB_REPOSITORY\`.
           EOF
           gh release create "v$VERSION" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --prerelease --title "opencode-rs $VERSION" --notes-file notes.md
+            --prerelease --title "opencode-native $VERSION" --notes-file notes.md
