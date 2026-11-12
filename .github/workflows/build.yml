@@ -156,7 +156,8 @@ jobs:
           bin=opencode/packages/cli-rs/target/$TARGET/dist/opencode-rs
           cp "$bin" stage/opencode-rs
           if [ "$RUNNER_OS" = macOS ]; then
-            cp -R "$bin.dSYM" debug/
+            # Cargo's opencode-rs.dSYM is a symlink into deps/; copy the bundle it points at.
+            cp -RL "$bin.dSYM" debug/
             strip stage/opencode-rs
             # strip invalidates the linker's ad-hoc signature; arm64 macOS runs only signed code.
             codesign --force --sign - stage/opencode-rs
@@ -181,7 +182,8 @@ jobs:
           mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_CACHE_HOME"
           cd "$RUNNER_TEMP"
           stage=$GITHUB_WORKSPACE/stage/opencode-rs
-          "$stage" session list > session-list.txt 2>&1 &
+          # JSON, so an empty list still proves the service answered: the table prints nothing for none.
+          "$stage" session list --format json > session-list.txt 2>&1 &
           pid=$!
           ( sleep 180; kill "$pid" 2>/dev/null ) &
           status=0
@@ -193,6 +195,7 @@ jobs:
             find "$HOME" -name '*.log' -exec sh -c 'echo "== $1"; tail -n 60 "$1"' _ {} \;
             exit 1
           fi
+          python3 -I -c 'import json, sys; assert isinstance(json.load(open(sys.argv[1])), list)' session-list.txt
 
       - name: Package
         run: |
