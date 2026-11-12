@@ -6,7 +6,9 @@ arm64, and macOS arm64, for testers.
 
 ## Startup and memory
 
-[![opencode 2.2.7 and opencode-rs side by side, attaching to a running server (click to play)](docs/demo-poster.png)](docs/demo.mp4)
+![opencode 2.2.7 and opencode-rs side by side, attaching to a running server and answering one prompt](docs/demo.gif)
+
+[Watch as video](docs/demo.mp4) (MP4, 1080p).
 
 The client alone, against a TypeScript server that is already running (median of 8 runs):
 

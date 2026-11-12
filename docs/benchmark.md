@@ -99,7 +99,9 @@ the wall-clock time since the clients started. [`bench/render.ts`](../bench/rend
 (JetBrains Mono, block characters as exact rectangles), `rsvg-convert -w 1920 -h 1080` renders it to a PNG with
 9×20 px cells, and frame *k* of the video shows the last snapshot taken at or before *k*/30 s. A 0.5 s lead with empty
 panes and the clock at 0 comes first. `ffmpeg` encodes the frames as H.264 High, level 4.1 (`crf 16`, `yuv420p`,
-`+faststart`, no audio).
+`+faststart`, no audio). The README's inline [`demo.gif`](demo.gif) is the same 1080p30 frames from the lossless
+master, with one palette built from the whole clip (`palettegen=stats_mode=diff`) and no dithering
+(`paletteuse=dither=none:diff_mode=rectangle`); its frame delays alternate 3 and 4 cs, 8.0 s in all.
 
 Thirteen takes were recorded. Nine came before the final setup: five with the project outside the sandbox `HOME` and
 four that checked that the snapshot rate does not change the timing (1 s vs 1/60 s). Their first frames were
