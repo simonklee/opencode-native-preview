@@ -1,4 +1,4 @@
-# opencode-rs preview builds
+# OpenCode native CLI preview builds
 
 Preview builds of `opencode-rs`, the Rust client for [OpenCode](https://github.com/anomalyco/opencode), built from
 its `oc-rust` branch (`packages/cli-rs`). The [build workflow](.github/workflows/build.yml) runs nightly when
@@ -41,9 +41,3 @@ download an archive with a browser, clear the flag first:
 ```sh
 xattr -d com.apple.quarantine opencode-rs
 ```
-
-## Reporting a problem
-
-Open an [issue](https://github.com/simonklee/cli-rs-preview/issues) with the output of `opencode-rs --version`, your
-OS and terminal, the steps that show the problem, and the end of the log (`opencode.log` in OpenCode's log directory;
-`opencode-rs debug paths` prints that directory).
