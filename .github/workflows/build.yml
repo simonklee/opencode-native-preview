@@ -419,8 +419,20 @@ jobs:
               -RedirectStandardOutput "$name.out" -RedirectStandardError "$name.err"
             $null = $p.Handle
             if (-not $p.WaitForExit(180000)) { $p.Kill(); throw "$name timed out" }
-            Get-Content "$name.out", "$name.err"
+            # Out-Host, so the output is not part of the function's return value.
+            Get-Content "$name.out", "$name.err" | Out-Host
             return $p.ExitCode
+          }
+          # First: does the client find the npm-installed opencode on PATH (an opencode.cmd shim on Windows)?
+          $code = Invoke-Bounded @('session', 'list', '--format', 'json') 'path-lookup'
+          $pathLookup = $code -eq 0
+          "finds opencode on PATH: $pathLookup (exit $code)" | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
+          Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'serve --service' } |
+            ForEach-Object { Stop-Process -Force -Id $_.ProcessId -ErrorAction SilentlyContinue }
+          if (-not $pathLookup) {
+            # Go on with the package's own binary, so session list and service stop are still checked.
+            $env:OPENCODE_TS_BIN = Join-Path (npm root -g) '@opencode\cli\bin\opencode.exe'
+            "OPENCODE_TS_BIN=$env:OPENCODE_TS_BIN ($(& $env:OPENCODE_TS_BIN --version))" | Tee-Object -Append $env:GITHUB_STEP_SUMMARY
           }
           try {
             # JSON, so an empty list still proves the service answered.
@@ -438,6 +450,7 @@ jobs:
             if ($left) { throw "service*.json still there after service stop: $($left.FullName -join ', ')" }
             $alive = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'serve --service' }
             if ($alive) { throw "service still running: $($alive.ProcessId -join ', ')" }
+            if (-not $pathLookup) { throw 'the client did not find opencode on PATH (npm installs opencode.cmd); the rest passed with OPENCODE_TS_BIN' }
           } catch {
             Get-ChildItem -Recurse -Filter '*.log' $root | ForEach-Object { "== $($_.FullName)"; Get-Content -Tail 60 $_ }
             throw
@@ -529,5 +542,15 @@ jobs:
 
           Verify: \`sha256sum -c SHA256SUMS --ignore-missing\` and \`gh attestation verify <archive> --repo $GITHUB_REPOSITORY\`.
           EOF
-          gh release create "v$VERSION" dist/* -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+          # GITHUB_TOKEN cannot create a tag at a commit whose workflow files differ from the default branch (that needs
+          # the workflows permission; the API answers 403 "Resource not accessible by integration"). When main moved
+          # on during the run, tag main's head and name the workflow commit in the notes.
+          target=$GITHUB_SHA
+          head=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_REF_NAME" --jq .sha)
+          if [ "$head" != "$GITHUB_SHA" ]; then
+            target=$head
+            printf '\nBuilt by the workflow at %s; tagged at %s, the head of %s when it finished.\n' \
+              "$GITHUB_SHA" "$head" "$GITHUB_REF_NAME" >> notes.md
+          fi
+          gh release create "v$VERSION" dist/* -R "$GITHUB_REPOSITORY" --target "$target" \
             --prerelease --title "opencode-native $VERSION" --notes-file notes.md
