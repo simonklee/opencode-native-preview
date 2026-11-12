@@ -7,6 +7,41 @@ for Linux x64, Linux arm64 and macOS arm64 (Apple silicon). Windows follows with
 
 These are unsigned previews for testers, not releases.
 
+## Why
+
+![opencode 2.2.7 (top) and opencode-rs (bottom) starting at the same moment and answering one prompt](docs/demo.gif)
+
+One real run, not sped up: `opencode` 2.2.7 from npm (top) and `opencode-rs` 0.0.0-rs-2 (bottom), started at the
+same moment in identical sandboxes against a mock LLM provider. Each starts its own TypeScript 2.2.7 server. AMD Ryzen 7
+9800X3D, Linux.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/startup-dark.svg">
+  <img alt="Time to first frame: opencode 2.2.7 314 ms, opencode-rs 219 ms standalone; 118 ms vs 5.8 ms with the server already running" src="docs/startup.svg">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/memory-dark.svg">
+  <img alt="Peak memory over 20 turns: opencode 2.2.7 client 306 MB, 604 MB with its server; opencode-rs client 44 MB, 410 MB with the TypeScript server" src="docs/memory.svg">
+</picture>
+
+| median of 8 runs | `opencode` 2.2.7 | `opencode-rs` + TS server 2.2.7 |
+|---|---|---|
+| first frame, client starts its own server | 314 ms | 219 ms |
+| first frame, server already running | 118 ms | 5.8 ms |
+| client peak memory, 20 turns | 306 MB | 44 MB |
+| client + server peak memory | 604 MB | 410 MB |
+| client CPU, 20 turns | 4.15 s | 0.16 s |
+
+First frame is the time from starting the client to the first character it prints in a 120×40 terminal; memory is
+the peak RSS of the client process, and of the client with its server, sampled every 20 ms over 20 prompts. Each
+label ran 8 times, interleaved with the others, with a throwaway `HOME` and an offline mock provider;
+[docs/benchmark.md](docs/benchmark.md) has the method, all eight labels (including an experimental ahead-of-time
+build of 2.2.7), the raw CSV, the versions and the machine.
+
+`opencode-rs` replaces only the client. It still runs the TypeScript server, which now holds most of the remaining
+memory (374 of 410 MB) and CPU, so whole-tree savings are smaller than the client's own.
+
 ## Install
 
 ```sh
