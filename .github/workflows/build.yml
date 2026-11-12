@@ -440,13 +440,15 @@ jobs:
             if ($code -ne 0) { throw "session list exited $code" }
             $list = Get-Content -Raw session-list.out | ConvertFrom-Json -NoEnumerate
             if ($list -isnot [array]) { throw 'session list did not print a JSON array' }
-            $registered = Get-ChildItem -Recurse -Filter 'service*.json' $root
+            # The registration is in the state directory; <config>\opencode\service.json holds the service's settings
+            # (hostname, port, password) and stays.
+            $registered = Get-ChildItem -Recurse -Filter 'service*.json' $env:XDG_STATE_HOME
             "registered: $($registered.FullName -join ', ')"
             if (-not $registered) { throw 'no service*.json after session list' }
             $code = Invoke-Bounded @('service', 'stop') 'service-stop'
             if ($code -ne 0) { throw "service stop exited $code" }
             Start-Sleep -Seconds 2
-            $left = Get-ChildItem -Recurse -Filter 'service*.json' $root
+            $left = Get-ChildItem -Recurse -Filter 'service*.json' $env:XDG_STATE_HOME
             if ($left) { throw "service*.json still there after service stop: $($left.FullName -join ', ')" }
             $alive = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -match 'serve --service' }
             if ($alive) { throw "service still running: $($alive.ProcessId -join ', ')" }
