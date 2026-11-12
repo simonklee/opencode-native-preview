@@ -87,15 +87,24 @@ tree_peak_rss_mb, client_peak_rss_mb, server_peak_rss_mb, cpu_total_s, cpu_clien
 
 ## The video
 
-[`demo.gif`](demo.gif) is one real run, not sped up. [`bench/demo.ts`](../bench/demo.ts) starts `opencode` 2.2.7
-and `opencode-rs` `--standalone` back to back, each in its own 120×32 PTY, sandbox and mock
-provider, pinned to separate CPUs (2–4,10–12 and 5–7,13–15). The Rust client uses the same npm 2.2.7 binary as its
-server. Once both are ready it types the same prompt into both. Every 50 ms it renders both screens and a status
-line per side (first frame, ready, current and peak RSS of the client and of client + server) into an asciicast,
-with wall-clock timestamps; [`agg`](https://github.com/asciinema/agg) 1.9.0 turns that into the GIF. Eight takes were
-recorded (first frame: TypeScript 244–1336 ms, Rust 170–418 ms); the one kept is closest to the benchmark medians
-(TypeScript 324 ms, Rust 183 ms). The video's
-peaks are lower than the table's because it runs one turn, not 20.
+[`demo.mp4`](demo.mp4) (2560×1440, 60 fps, 8 s) is one real run, not sped up. It shows the client alone: both
+clients attach to a TypeScript server that is already running.
+
+[`bench/video.ts`](../bench/video.ts) gives each side its own sandbox, mock provider and `opencode` 2.2.7 server
+(`serve --port 0`, the npm binary), each pinned to its own CPUs (2–4,10–12 for TypeScript, 5–7,13–15 for Rust). It
+waits for both servers' URLs plus 2 s, then starts `opencode --server <url>` and `opencode-rs --server <url>` back to
+back, each in a 100×40 PTY. Once both show the idle prompt it types the same prompt into both. Every 1/60 s it stores
+both screens (cell text and colors), the first frame, the ready time, and the RSS of each client and each server, with
+the wall-clock time since the clients started. [`bench/render.ts`](../bench/render.ts) draws each snapshot as an SVG
+(JetBrains Mono, 12×26 px cells, block characters as exact rectangles), `rsvg-convert` turns it into a PNG, and frame
+*k* of the video shows the last snapshot taken at or before *k*/60 s. A 0.5 s lead with empty panes and the clock at
+0 comes first. `ffmpeg` encodes the frames as H.264 (`crf 16`, `yuv420p`, `+faststart`).
+
+Thirteen takes were recorded. Nine came before the final setup: five with the project outside the sandbox `HOME` and
+four that checked that the snapshot rate does not change the timing (1 s vs 1/60 s). Their first frames were
+TypeScript 106–184 ms and Rust 4.1–38 ms (one take at 38 ms, the rest 4.1–5.7 ms). The four with the final setup gave
+TypeScript 102–109 ms and Rust 3.9–4.1 ms. The one kept is closest to the benchmark medians (TypeScript 109 ms,
+Rust 4.1 ms). The video's peaks are lower than the table's because it runs one prompt, not 20.
 
 ## Versions
 
