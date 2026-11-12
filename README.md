@@ -20,7 +20,7 @@ The client alone, against a TypeScript server that is already running (median of
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/client-dark.svg">
-  <img alt="Server already running: first frame 118 ms vs 5.8 ms, client memory 319 MB vs 44 MB, client CPU 3.92 s vs 0.17 s" src="docs/client.svg">
+  <img alt="Client only, server already running. Startup: Native 5.8 ms, TypeScript 118 ms. Memory: Native 44 MB, TypeScript 319 MB. CPU: Native 0.17 s, TypeScript 3.92 s." src="docs/client.svg">
 </picture>
 
 The client starts its own server (`--standalone`):
@@ -33,7 +33,7 @@ The client starts its own server (`--standalone`):
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/standalone-dark.svg">
-  <img alt="Client starts its own server: first frame 314 ms vs 219 ms, total memory 604 MB vs 410 MB" src="docs/standalone.svg">
+  <img alt="Client starts its own server. Startup: Native 219 ms, TypeScript 314 ms. Memory: Native 44 MB client, 410 MB with the server; TypeScript 306 MB client, 604 MB with the server." src="docs/standalone.svg">
 </picture>
 
 `opencode-rs` replaces only the client: the TypeScript server holds 374 of its 410 MB. The method, raw data, and
