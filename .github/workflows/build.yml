@@ -23,7 +23,6 @@ permissions:
 
 env:
   RUST_VERSION: "1.99.1"
-  ZIG_VERSION: "0.17.0"
   BUN_VERSION: "1.4.1"
   # The oldest TypeScript CLI the client is tested against (share-builds.md 1.2).
   OPENCODE_TS_MIN: "2.2.7"
@@ -37,6 +36,7 @@ jobs:
       dev_base: ${{ steps.plan.outputs.dev_base }}
       opentui_rev: ${{ steps.plan.outputs.opentui_rev }}
       header_fnv1a64: ${{ steps.plan.outputs.header_fnv1a64 }}
+      zig_version: ${{ steps.plan.outputs.zig_version }}
       skip: ${{ steps.plan.outputs.skip }}
       bin: ${{ steps.plan.outputs.bin }}
       version: ${{ steps.plan.outputs.version }}
@@ -58,6 +58,10 @@ jobs:
           hash=$(curl -fsSL "https://raw.githubusercontent.com/anomalyco/opentui/$rev/packages/rust/crates/opentui-sys/src/generated.rs" \
             | sed -nE 's/.*OPENTUI_HEADER_FNV1A64: u64 = (0x[0-9a-f_]+);.*/\1/p' | tr -d _)
           test -n "$hash"
+          # The Zig that the pinned OpenTUI's native build asks for.
+          zig=$(curl -fsSL "https://raw.githubusercontent.com/anomalyco/opentui/$rev/packages/native/build.zig.zon" \
+            | sed -nE 's/.*\.minimum_zig_version = "([^"]+)".*/\1/p')
+          test -n "$zig"
           # The Cargo name of the client binary: opencode-rs before the rename (O-114), opencode-native after.
           # Every archive ships it as opencode-native. Drop this once a release has been built from the new name.
           bin=$(git show "$commit:packages/cli-rs/crates/cli/Cargo.toml" | awk '
@@ -85,11 +89,12 @@ jobs:
             echo "dev_base=$dev_base"
             echo "opentui_rev=$rev"
             echo "header_fnv1a64=$hash"
+            echo "zig_version=$zig"
             echo "skip=$skip"
             echo "bin=$bin"
             echo "version=$version"
           } | tee -a "$GITHUB_OUTPUT"
-          echo "$REF -> $commit (dev base $dev_base), OpenTUI $rev ($hash), binary $bin, version $version, skip=$skip" >> "$GITHUB_STEP_SUMMARY"
+          echo "$REF -> $commit (dev base $dev_base), OpenTUI $rev ($hash, Zig $zig), binary $bin, version $version, skip=$skip" >> "$GITHUB_STEP_SUMMARY"
 
   build:
     needs: plan
@@ -136,7 +141,7 @@ jobs:
       - if: steps.native-cache.outputs.cache-hit != 'true'
         uses: mlugg/setup-zig@v2
         with:
-          version: ${{ env.ZIG_VERSION }}
+          version: ${{ needs.plan.outputs.zig_version }}
       - if: steps.native-cache.outputs.cache-hit != 'true'
         uses: oven-sh/setup-bun@v2
         with:
@@ -292,7 +297,7 @@ jobs:
       - if: steps.native-cache.outputs.cache-hit != 'true'
         uses: mlugg/setup-zig@v2
         with:
-          version: ${{ env.ZIG_VERSION }}
+          version: ${{ needs.plan.outputs.zig_version }}
       - if: steps.native-cache.outputs.cache-hit != 'true'
         uses: oven-sh/setup-bun@v2
         with:
@@ -604,6 +609,7 @@ jobs:
       HEADER: ${{ needs.plan.outputs.header_fnv1a64 }}
       REF: ${{ inputs.ref || 'oc-rust' }}
       VERSION: ${{ needs.plan.outputs.version }}
+      ZIG_VERSION: ${{ needs.plan.outputs.zig_version }}
     steps:
       - uses: actions/download-artifact@v5
         with:
