@@ -20,7 +20,7 @@ at_least() { [ "$(printf '%s\n%s\n' "$2" "$1" | sort -V | head -n 1)" = "$2" ]; 
 case $(uname -s) in
   Linux) os=linux ;;
   Darwin) os=darwin ;;
-  MINGW* | MSYS* | CYGWIN*) die "Windows builds are not published yet; a PowerShell installer (install.ps1) will follow with the Windows port." ;;
+  MINGW* | MSYS* | CYGWIN*) die "on Windows, download the x86_64-pc-windows-msvc zip from https://github.com/$REPO/releases and extract it (see the README)" ;;
   *) die "unsupported OS $(uname -s); previews exist for Linux x64, Linux arm64 and macOS arm64" ;;
 esac
 case $(uname -m) in

@@ -2,8 +2,8 @@
 
 The OpenCode native CLI, `opencode-native`, is a Rust client for [OpenCode](https://github.com/anomalyco/opencode),
 built from its `oc-rust` branch. Each build is an unsigned
-[prerelease](https://github.com/simonklee/opencode-native-preview/releases) for Linux x64, Linux arm64, and macOS
-arm64, for testers.
+[prerelease](https://github.com/simonklee/opencode-native-preview/releases) for Linux x64, Linux arm64, macOS arm64,
+and Windows x64, for testers.
 
 ## Startup and memory
 
@@ -57,7 +57,6 @@ What differs:
 - There is no `/restart`; use `opencode-native service restart`.
 - HTTPS trusts the system's root certificates; `NODE_EXTRA_CA_CERTS` is ignored.
 - 14 languages are syntax-highlighted; others show as plain text.
-- There are no Windows builds yet.
 
 The full list is in
 [`parity/deviations`](https://github.com/anomalyco/opencode/tree/oc-rust/packages/cli-rs/parity/deviations).
@@ -84,6 +83,14 @@ To keep the client's tabs apart from `opencode`'s, set `OPENCODE_TUI_CHANNEL=nat
 
 The binary has only an ad-hoc signature. If you downloaded an archive with a browser, run
 `xattr -d com.apple.quarantine opencode-native`.
+
+## Windows
+
+Download `opencode-native-<version>-x86_64-pc-windows-msvc.zip` from the
+[latest release](https://github.com/simonklee/opencode-native-preview/releases) and extract it; keep `opentui.dll` next
+to `opencode-native.exe`. If Windows blocks the download, run `Unblock-File` on the zip before extracting. Install the
+TypeScript CLI with `npm i -g @opencode/cli`. Each build is tested on GitHub's Windows Server 2025 runner, with the TUI
+on a pseudoconsole (ConPTY); no other terminal is tested.
 
 ## Reporting bugs
 

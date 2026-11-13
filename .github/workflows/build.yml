@@ -275,7 +275,6 @@ jobs:
     needs: plan
     if: needs.plan.outputs.skip != 'true'
     runs-on: ubuntu-22.04
-    continue-on-error: true
     env:
       TARGET: x86_64-pc-windows-msvc
     steps:
@@ -309,13 +308,11 @@ jobs:
           path: native/
           if-no-files-found: error
 
-  # The Windows build and its smoke tests (W10). The job may fail and stays out of the release until W12: its
-  # artifacts are named windows-*, which the release's dist-* pattern does not match.
+  # The Windows build and its smoke tests (W10). Its zip goes into the release with the other archives (W12).
   windows:
     needs: [plan, native-windows]
     if: needs.plan.outputs.skip != 'true'
     runs-on: windows-2025
-    continue-on-error: true
     timeout-minutes: 150
     env:
       TARGET: x86_64-pc-windows-msvc
@@ -371,12 +368,12 @@ jobs:
           ls -l stage dist
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-dist-${{ env.TARGET }}
+          name: dist-${{ env.TARGET }}
           path: dist/
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-debug-${{ env.TARGET }}
+          name: debug-${{ env.TARGET }}
           path: debug/
           retention-days: 90
 
@@ -528,12 +525,11 @@ jobs:
           path: ${{ runner.temp }}\smoke
           if-no-files-found: ignore
 
-  # The workspace's tests on Windows, to list what fails there. Informational: may fail, and release does not need it.
+  # The workspace's tests on Windows. A release needs them to pass (W12).
   windows-test:
     needs: [plan, native-windows]
     if: needs.plan.outputs.skip != 'true'
     runs-on: windows-2025
-    continue-on-error: true
     timeout-minutes: 150
     env:
       TARGET: x86_64-pc-windows-msvc
@@ -594,8 +590,8 @@ jobs:
           if-no-files-found: ignore
 
   release:
-    needs: [plan, build]
-    if: always() && needs.plan.outputs.skip != 'true' && needs.build.result == 'success'
+    needs: [plan, build, windows, windows-test]
+    if: needs.plan.outputs.skip != 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
