@@ -1,23 +1,10 @@
 name: cli-rs release
 
-# Builds opencode-native, the Rust client in packages/cli-rs, natively on each runner below and keeps each archive as an
-# artifact. A cli-rs-v<version> tag also publishes them as a GitHub release. It never becomes Latest: the monorepo's
-# Latest release drives OpenCode's own update paths.
 on:
-  push:
-    tags:
-      - "cli-rs-v*"
-  pull_request:
-    paths:
-      - .github/workflows/release-cli-rs.yml
   workflow_dispatch:
 
 permissions:
   contents: read
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -25,13 +12,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # The Linux builds need the runner's glibc, 2.35, or newer.
-          - { runner: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
-          - { runner: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
-          - { runner: macos-15-intel, target: x86_64-apple-darwin }
-          - { runner: macos-15, target: aarch64-apple-darwin }
-          - { runner: windows-2025, target: x86_64-pc-windows-msvc, exe: .exe }
+          - { runner: ubuntu-22.04, target: x86_64-unknown-linux-gnu, container: "rockylinux:8" }
+          - { runner: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, container: "rockylinux:8" }
+          - { runner: ubuntu-22.04, target: x86_64-unknown-linux-gnu, zig: x86_64-linux-gnu.2.17, zig_sha: 3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a }
+          - { runner: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu, zig: aarch64-linux-gnu.2.17, zig_sha: a1546d5646eb184437918d6635ca6b762a0e889eac09cef720ee7a1ed3fe7795 }
     runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
     timeout-minutes: 60
     defaults:
       run:
@@ -40,10 +26,14 @@ jobs:
     env:
       OPENCODE_NATIVE_COMMIT: ${{ github.sha }}
       CARGO_PROFILE_DIST_STRIP: symbols
-      MACOSX_DEPLOYMENT_TARGET: "13.0"
-      # No Visual C++ runtime to install beside the .exe.
-      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
     steps:
+      # The container has no compiler, git or rustup.
+      - if: matrix.container
+        working-directory: .
+        run: |
+          dnf -y -q install gcc gcc-c++ git unzip xz
+          curl -fsSL https://sh.rustup.rs | sh -s -- -y -q --profile minimal --default-toolchain none
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           persist-credentials: false
@@ -52,45 +42,35 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
-      # The version opencode-native --version prints: the tag's, or 0.0.0-<commit> for any other run.
-      - name: Version
+      # Zig compiles the C and C++ and links against glibc 2.17's symbols.
+      - if: matrix.zig
+        working-directory: ${{ runner.temp }}
         run: |
-          version=0.0.0-$GITHUB_SHA
-          if [[ $GITHUB_REF == refs/tags/cli-rs-v* ]]; then version=${GITHUB_REF_NAME#cli-rs-v}; fi
-          echo "OPENCODE_VERSION=$version" >> "$GITHUB_ENV"
-      # rustup reads rust-toolchain.toml; `bun run cargo` first fetches OpenTUI's native library from its release.
+          file=zig-$(uname -m)-linux-0.17.1
+          curl -fsSL "https://ziglang.org/download/0.17.1/$file.tar.xz" -o zig.tar.xz
+          echo "${{ matrix.zig_sha }}  zig.tar.xz" | sha256sum -c
+          tar -xJf zig.tar.xz
+          for tool in cc c++; do
+            printf '#!/bin/sh\nfor a; do shift; case $a in --target=*) ;; *) set -- "$@" "$a" ;; esac; done\nexec %s %s -target %s "$@"\n' "$PWD/$file/zig" "$tool" "${{ matrix.zig }}" > "zig-$tool"
+            chmod +x "zig-$tool"
+          done
+          { echo "CC=$PWD/zig-cc"; echo "CXX=$PWD/zig-c++"; echo "CXXSTDLIB=c++"; echo "RUSTFLAGS=-C linker=$PWD/zig-cc"; } >> "$GITHUB_ENV"
       - run: rustup toolchain install
-      - run: bun run cargo build --locked --profile dist --bin opencode-native
-      - name: Package
+      - name: Build
         run: |
-          name=opencode-native-$OPENCODE_VERSION-${{ matrix.target }}
-          mkdir -p "dist/$name"
-          cp "target/dist/opencode-native${{ matrix.exe }}" "dist/$name/"
-          tar -C dist -czf "dist/$name.tar.gz" "$name"
-          ls -l "dist/$name" "dist/$name.tar.gz"
+          start=$SECONDS
+          bun run cargo build --locked --profile dist --bin opencode-native
+          echo "build: $((SECONDS - start)) s"
+      - name: Floor
+        run: |
+          bin=target/dist/opencode-native
+          echo "highest GLIBC: $(objdump -T "$bin" | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1)"
+          echo "highest GLIBCXX: $(objdump -T "$bin" | grep -oE 'GLIBCXX_[0-9.]+' | sort -Vu | tail -1)"
+          objdump -p "$bin" | grep NEEDED
+          ls -l "$bin"
+          "$bin" --version
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: opencode-native-${{ matrix.target }}
-          path: packages/cli-rs/dist/*.tar.gz
+          name: opencode-native-${{ matrix.target }}-${{ matrix.container && 'rocky8' || 'zig' }}
+          path: packages/cli-rs/target/dist/opencode-native
           if-no-files-found: error
-          compression-level: 0
-
-  release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/cli-rs-v')
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          pattern: opencode-native-*
-          merge-multiple: true
-      - name: Publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          sha256sum ./*.tar.gz > SHA256SUMS
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --latest=false \
-            --title "opencode-native ${GITHUB_REF_NAME#cli-rs-v}" --notes "The Rust client (packages/cli-rs) at $GITHUB_SHA." \
-            ./*.tar.gz SHA256SUMS
