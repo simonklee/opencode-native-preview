@@ -1,8 +1,8 @@
 name: cli-rs release
 
-# Builds opencode-native, the Rust client in packages/cli-rs, for every target and keeps each archive as an artifact.
-# A cli-rs-v<version> tag also publishes them as a GitHub release. It never becomes Latest: the monorepo's Latest
-# release drives OpenCode's own update paths.
+# Builds opencode-native, the Rust client in packages/cli-rs, natively on each runner below and keeps each archive as an
+# artifact. A cli-rs-v<version> tag also publishes them as a GitHub release. It never becomes Latest: the monorepo's
+# Latest release drives OpenCode's own update paths.
 on:
   push:
     tags:
@@ -19,38 +19,30 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-defaults:
-  run:
-    shell: bash
-
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Zig links Linux against glibc 2.17, or musl statically.
-          - { runner: ubuntu-24.04, target: x86_64-unknown-linux-gnu, zig: x86_64-unknown-linux-gnu.2.17 }
-          - { runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, zig: aarch64-unknown-linux-gnu.2.17 }
-          - { runner: ubuntu-24.04, target: x86_64-unknown-linux-musl, zig: x86_64-unknown-linux-musl }
-          - { runner: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, zig: aarch64-unknown-linux-musl }
+          # The Linux builds need the runner's glibc, 2.35, or newer.
+          - { runner: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          - { runner: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
           - { runner: macos-15-intel, target: x86_64-apple-darwin }
           - { runner: macos-15, target: aarch64-apple-darwin }
-          - { runner: windows-2025, target: x86_64-pc-windows-msvc }
-          - { runner: windows-11-arm, target: aarch64-pc-windows-msvc }
+          - { runner: windows-2025, target: x86_64-pc-windows-msvc, exe: .exe }
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     defaults:
       run:
+        shell: bash
         working-directory: packages/cli-rs
     env:
-      TARGET: ${{ matrix.target }}
       OPENCODE_NATIVE_COMMIT: ${{ github.sha }}
       CARGO_PROFILE_DIST_STRIP: symbols
       MACOSX_DEPLOYMENT_TARGET: "13.0"
       # No Visual C++ runtime to install beside the .exe.
       CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
-      CARGO_TARGET_AARCH64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
@@ -60,33 +52,20 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: package.json
-      - if: matrix.zig
-        uses: mlugg/setup-zig@8d6198c65fb0feaa111df26e6b467fea8345e46f # v2.0.5
-        with:
-          version: 0.17.1
-          use-cache: false
-      - if: matrix.zig
-        uses: taiki-e/install-action@fe3acb53a98b62c772db35de75ce0e4595e7ca8c # v2.90.8
-        with:
-          tool: cargo-zigbuild@0.24.1
-      - name: Set up
+      # The version opencode-native --version prints: the tag's, or 0.0.0-<commit> for any other run.
+      - name: Version
         run: |
-          # The toolchain in rust-toolchain.toml, and OpenTUI's native library from its pinned release.
-          rustup toolchain install
-          rustup target add "$TARGET"
-          echo "OPENTUI_LIB_DIR=$(bun script/opentui-native.ts)" >> "$GITHUB_ENV"
-          # The version opencode-native --version prints: the tag's, or 0.0.0-<commit> for any other run.
           version=0.0.0-$GITHUB_SHA
           if [[ $GITHUB_REF == refs/tags/cli-rs-v* ]]; then version=${GITHUB_REF_NAME#cli-rs-v}; fi
           echo "OPENCODE_VERSION=$version" >> "$GITHUB_ENV"
-      - name: Build
-        run: cargo ${{ matrix.zig && 'zigbuild' || 'build' }} --locked --profile dist --target "${{ matrix.zig || matrix.target }}" --bin opencode-native
+      # rustup reads rust-toolchain.toml; `bun run cargo` first fetches OpenTUI's native library from its release.
+      - run: rustup toolchain install
+      - run: bun run cargo build --locked --profile dist --bin opencode-native
       - name: Package
         run: |
-          name=opencode-native-$OPENCODE_VERSION-$TARGET
-          exe=opencode-native${{ contains(matrix.target, 'windows') && '.exe' || '' }}
+          name=opencode-native-$OPENCODE_VERSION-${{ matrix.target }}
           mkdir -p "dist/$name"
-          cp "target/$TARGET/dist/$exe" "dist/$name/"
+          cp "target/dist/opencode-native${{ matrix.exe }}" "dist/$name/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           ls -l "dist/$name" "dist/$name.tar.gz"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
